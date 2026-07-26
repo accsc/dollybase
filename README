@@ -1,0 +1,9 @@
+
+- What's DollyBase?
+
+DollyBase is a xbase clone.
+
+- Installation 
+
+Run ./configure; make ; make install
+

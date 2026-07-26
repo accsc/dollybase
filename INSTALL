@@ -1,0 +1,8 @@
+You need:
+
+
+- All ncurses with header files
+- Binutils
+- Tested with gcc 2.9.x and 3.x.x
+
+Run ./configure ; make ; make install

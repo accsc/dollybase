@@ -1,0 +1,55 @@
+ - DollyBASE I - News - July 2006.
+
+
+	v0.0.1 - First Alpha release. Three parts of the project, libdollybase,
+		 prg2c and dollybase. The first part basic for all of them. The
+		 second is a pseudo-compiler, translate dbase code to c code.
+		 And the last one is a dbase clone.
+	v0.0.2  - Second Alpha release. Libdollybase has been changed and 
+		more secured. Pseudo-compilter prg2c has been deleted.
+	v0.0.3  - Third Alpha release of very inestable series. A lot of bugs
+		and struct problems fixed. XD Great Work!. Posted in SF.NET.
+		The project has activity now.
+	v0.0.4 - Forth Alpha release. Working on assistant and menu code. 
+		Usable version of dollybase with interactive screen is near.
+	v0.0.5 - Fifth Alpha release. New create_database function and fixed 
+		bugs.
+	v0.0.6 - 1/2 Index implemented. Now libdollybase can read NDX, NTX and 
+		IDX files. New modules for dbase functions.
+	v0.0.7 - Funcion to reindex, incomplete. New export module. Export as 
+		CSV is now posible. New LOCKs functions for multiuser, new 
+		dialogs for ncurses kernel interface for assistants. Tested
+		in FreeBSD 4.10-RELEASE.
+	v0.0.8 - New regression test, now its posible to check libdollybase 
+		components. New test locale support for 
+		internationalize dollyBASE.
+		New interpreter code without BISON&FLEX code, called AUR.
+		New create database assistant based on lib forms.
+		Added CDK curses based interface, more comfortable and fast.
+		Implemented new/modifiy database creator assistant 
+		with matrix widget.
+		Implemented all menu options except index,sort,format,query,
+		label,view and import options.
+		Broken compatibility with *BSD becouse of CDK.
+	v0.0.9 - New record editor and label assistant. Import from PostgreSQL
+		now is finished. Fixed some problems in replace function.
+		New export as html in libdollybase.
+	v0.0.10 - New math processor in runtime (solve -*+/ and pow operations)
+		in staments. Tokenizer factory is done. Compatibility with *BSD
+		still broken, but some errors in other Linuxs fixed.
+		
+---------------------- Prealpha 0.1 NoRuntime releases ----------------------
+Complete usable version of DollyBASE without selection of output filename in some assistants...But no runtime included, DollyBASE in this moment, cant read PRG files.
+-----------------------------------------------------------------------------
+
+	v0.0.11 - New exports availible in DollyBASE menus, more options imple
+		mented. Next release will be more *BSD compatible.
+	v0.0.12 - New runtime capabilities, a new function processor. Imple
+		mented DAY and BOF as working functions.
+	v0.4 - Rewrite of some sections in libdbase and dbase main program.
+
+  July 2026
+
+        v0.5 - Migrated code repository to github from sourceforge.
+               libdbase now compiles in modern gcc
+               PRG interpreter partially implemented

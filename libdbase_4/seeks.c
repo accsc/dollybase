@@ -30,7 +30,7 @@ static char *my_strcasestr(const char *haystack, const char *needle)
 
 void locate(DATABASEDBF **asp, int y,char *condicion)
 {
-int o = 0;
+int o;
 char *dos;
 DATABASEDBF *bsp;
 if (( dos = (char *)malloc(1025)) == NULL)
@@ -126,7 +126,7 @@ return fin;
 
 int continues(DATABASEDBF **asp)
 {
-int o = 0;
+int o;
 char *dos;
 DATABASEDBF *bsp;
 if (( dos = (char *)malloc(1025)) == NULL)

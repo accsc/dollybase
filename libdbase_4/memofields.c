@@ -179,18 +179,7 @@ int get_fpt_memo_field(char *_fname, int nBlock, char *res, int max)
 	fprintf(stderr,"Memofields. Size/Max %i/%i\n",nSize,max);
 	fflush(stderr);
 #endif
-	
-	for( i = 0; i< 8000; ++i)
-	{
-		if( getc(in) == 0x00)
-		{
-		fprintf(stderr,"%i Este caracter 0x00.\n",i);
-		fflush(stderr);
-		getchar();
-		}
-	}	
-	fprintf(stderr,"END***\n");
-	fflush(stderr);
+
 	fseek(in,512,SEEK_SET);
 	
 	nType=getc(in)+(getc(in)*256)+(getc(in)*65536)+(getc(in)*16777216);

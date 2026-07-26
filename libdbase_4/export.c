@@ -72,7 +72,7 @@ int export_as_csv(DATABASEDBF *asp,char sep, char *_fname)
 		field_name(asp,i,&max);
 		fprintf(out,"\"%s,%c,%i\"",max,asp->fields.tipos[i],asp->fields.longitudes[i]);
 		if( i != asp->camposn)
-			fprintf(out,",");
+			fprintf(out,"%c",sep);
 		else
 			fprintf(out,"\n");
 		fflush(out);
@@ -84,7 +84,7 @@ int export_as_csv(DATABASEDBF *asp,char sep, char *_fname)
 			get_field(asp,i,&f2);
 			fprintf(out,"\"%s\"",f2);
 			if( i != asp->camposn)
-				fprintf(out,",");
+				fprintf(out,"%c",sep);
 			else
 				fprintf(out,"\n");
 			fflush(stdout);

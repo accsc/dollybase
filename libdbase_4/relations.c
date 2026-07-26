@@ -85,9 +85,15 @@ if( se_n <= 0)
 	free(se);
 	return;
 }
-if( asp_n == 0)
+if( asp_n <= 0)
 {
 	fprintf(stderr,"DBLinks Error: Field '%s' not exists in database '%s'\n",field,asp->name);
+	fflush(stderr);
+	a->link_f = NULL;
+	memcpy(*linko, a, sizeof(DBLINK));
+	free(a);
+	free(se);
+	return;
 }
 
 /*if ( (a = tmpfile()) == NULL)*/

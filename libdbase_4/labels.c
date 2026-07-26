@@ -22,11 +22,10 @@
 LBL * use_label(char *_fname)
 {
 	FILE *a;
-	LBL *test = NULL;
+	LBL *test;
 	int i;
 	char *block;
-		
-	test->sig = 0x00;
+
 
 	if( (block  = (char *) malloc(1035)) == NULL)
 	{
@@ -34,7 +33,7 @@ LBL * use_label(char *_fname)
 		fprintf(stderr,"Label. Not enought memory.\n");
 		fflush(stderr);
 #endif
-		return test;
+		return NULL;
 	}
 
 
@@ -45,9 +44,10 @@ LBL * use_label(char *_fname)
                 fflush(stderr);
 #endif
                 free(block);
-                return test;
+                return NULL;
         }
 
+	test->sig = 0x00;
 
 	if( (a = fopen(_fname,"rb")) == NULL)
 	{

@@ -148,10 +148,10 @@ if( asp->fields.tipos[number] == 'M')
 {
 	printf("%i = %s\n",atoi(presion2),presion2);
 	get_dbt(asp->name,dbt_name);
-	if( asp->tipo = 3)
-	get_memo_field(dbt_name,atoi(presion2),&presion2,1023);
-	else if(asp->tipo = 4)
-	get_db4_memo_block(dbt_name,atoi(presion2),presion2,1023);
+	if( asp->tipo == 3)
+	    get_memo_field(dbt_name,atoi(presion2),&presion2,1023);
+	else if(asp->tipo == 4)
+	    get_db4_memo_block(dbt_name,atoi(presion2),presion2,1023);
 }
 
 fclose(a);
@@ -292,7 +292,7 @@ int add_to_dbt(char *_na,char *content, int max)
 	struct stat dbt_info;  
 	int next_block, i,i2; /* The next block */
 	
-	if( access(_na,F_OK & R_OK & W_OK) != 0)
+	if( access(_na,F_OK | R_OK | W_OK) != 0)
 	{
 #ifdef DEBUG
 		fprintf(stderr,"Cant manipulate DBT file\n");
@@ -405,7 +405,7 @@ int get_memo_field(char *_na, int block, char **result, int max)
 		free(dbt_block);
 		return -1;
 	}
-	if( access(_na,F_OK & R_OK) != 0)
+	if( access(_na,F_OK | R_OK) != 0)
 	{
 #ifdef DEBUG
 		fprintf(stderr,"Cant manipulate DBT file: $%s$.\n",_na);
@@ -465,7 +465,7 @@ int get_memo_field(char *_na, int block, char **result, int max)
 	free(result2);
 	fclose(dbt_file);
 	free(dbt_block);
-	return -1;
+	return 0;
 }
 
 

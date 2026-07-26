@@ -29,8 +29,7 @@ int print_line(printer prn, char *line)
 }
 int print_chr(printer prn, char chr)
 {
-	char *unico;
-	unico = malloc(2);
+	char unico[2];
 	unico[0] = chr;
 	unico[1] = '\0';
 	return send_to_printer(prn,unico);
@@ -40,7 +39,7 @@ int send_to_printer(printer prn, char *sthg)
 {
 	FILE *prin;
 
-	if( (prin = fopen(prn.name,"wb")) == NULL)
+	if( (prin = fopen(prn.name,"ab")) == NULL)
 	{
 		return -1;
 	}

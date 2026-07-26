@@ -1,11 +1,36 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "libdbase.h"
+
+/* Portable fallback for strcasestr (GNU-specific) */
+#ifndef HAVE_STRCASESTR
+static char *my_strcasestr(const char *haystack, const char *needle)
+{
+    size_t hlen = strlen(haystack);
+    size_t nlen = strlen(needle);
+    if (nlen > hlen)
+        return NULL;
+    for (const char *p = haystack; p <= haystack + hlen - nlen; p++)
+    {
+        size_t i;
+        for (i = 0; i < nlen; i++)
+        {
+            if (tolower((unsigned char)p[i]) != tolower((unsigned char)needle[i]))
+                break;
+        }
+        if (i == nlen)
+            return (char *)p;
+    }
+    return NULL;
+}
+#define strcasestr my_strcasestr
+#endif /* HAVE_STRCASESTR */
 
 void locate(DATABASEDBF **asp, int y,char *condicion)
 {
-int o,u;
+int o;
 char *dos;
 DATABASEDBF *bsp;
 if (( dos = (char *)malloc(1025)) == NULL)
@@ -52,6 +77,7 @@ int found(DATABASEDBF *asp)
 	{
 	return VERITAS;
 	}
+	return FALSO;
 }
 
 
@@ -100,7 +126,7 @@ return fin;
 
 int continues(DATABASEDBF **asp)
 {
-int o,u;
+int o;
 char *dos;
 DATABASEDBF *bsp;
 if (( dos = (char *)malloc(1025)) == NULL)

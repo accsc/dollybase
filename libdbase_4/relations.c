@@ -75,7 +75,7 @@ if( se->tipo == 0)
 }
 se_n = field_to_number(se,second_field);
 asp_n = field_to_number(asp,field);
-if( se_n == 0)
+if( se_n <= 0)
 {
 	fprintf(stderr,"DBLinks Error: Field '%s' not exists in database %s\n",second_field,second);
 	fflush(stderr);
@@ -85,9 +85,15 @@ if( se_n == 0)
 	free(se);
 	return;
 }
-if( asp_n == 0)
+if( asp_n <= 0)
 {
 	fprintf(stderr,"DBLinks Error: Field '%s' not exists in database '%s'\n",field,asp->name);
+	fflush(stderr);
+	a->link_f = NULL;
+	memcpy(*linko, a, sizeof(DBLINK));
+	free(a);
+	free(se);
+	return;
 }
 
 /*if ( (a = tmpfile()) == NULL)*/

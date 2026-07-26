@@ -310,11 +310,7 @@ return results;
 /* Next 4 multiple */
 int ajust_key_per4(int key_size)
 {
-int i;
-for( i = 0; i < key_size; ++i)
-i = i*4;
-i = i+4;
-return i;
+return ((key_size + 3) / 4) * 4;
 }
 
 

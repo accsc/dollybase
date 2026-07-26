@@ -3,7 +3,7 @@
 #include "string.h"
 #include "libdbase.h"
 
-int average_campo(DATABASEDBF *asp, char *campo, int nexts)
+long long average_campo(DATABASEDBF *asp, char *campo, int nexts)
 {
 int u,i,o;
 char *f1;
@@ -12,7 +12,7 @@ if( (f1 = (char *) malloc(2048)) == NULL)
 {
 return -1;
 }
-int total = 0;
+long long total = 0;
 u = field_to_number(asp, campo);
 if( dfield_type(asp, u) != 'N')
 return -1;
@@ -35,7 +35,7 @@ return (total/o);
 }
 
 
-int sum_campo(DATABASEDBF *asp, char *campo, int nexts)
+long long sum_campo(DATABASEDBF *asp, char *campo, int nexts)
 {
 int u,i,o;
 char *f1;
@@ -44,7 +44,7 @@ if (( f1= (char *) malloc(2048)) == NULL)
 {
 return -1;
 }
-int total = 0;
+long long total = 0;
 if (( u = field_to_number(asp, campo)) == -2)
 {
 return -3;
@@ -84,9 +84,9 @@ return y;
 
 int potencia(int num, int veces)
 {
-int y;
+int y, result = 1;
 for(y = 0; y<veces; ++y)
-num = num * num;
-return num;
+result = result * num;
+return result;
 }
 

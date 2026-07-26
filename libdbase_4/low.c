@@ -15,8 +15,8 @@ char locate_is=0; */
 void use(char *dbf_name, DATABASEDBF **bsp)
 {
 FILE *data;
-int con,zise,conter,i=0;
-int runn,prun;
+int con = 0, zise = 0, conter = 0, i =0;
+int runn = 0,prun = 0;
 int day,mes,year;
 DATABASEDBF *asp;
 int u[4]; /* Better for FoxBASE reccounts */
@@ -231,10 +231,10 @@ return 0;
 */
 int eof_dbf(DATABASEDBF *asp)
 {
-	if(asp->current == asp->recnos) 
-	return VERITAS;
+	if(asp->current == asp->recnos+1) 
+	    return VERITAS;
 	else
-	return FALSO;
+	    return FALSO;
 }
 char chr(int c)
 {
@@ -243,14 +243,14 @@ return c;
 int bof(DATABASEDBF *asp)
 {
         if(asp->current == 1)
-        return VERITAS;
+            return VERITAS;
         else
-        return FALSO;
+            return FALSO;
 }
 
 void DBF(DATABASEDBF *asp, char **name)
 {
-*name = malloc( sizeof( 2048));
+*name = malloc(2048);
 strcpy(*name,asp->name);
 }
 
@@ -271,7 +271,7 @@ int null_test( char *a)
 	siz = strlen(a);
 for( i= 0; i< siz; ++i)
 {
-	if( a[siz] != ' ' && a[siz] != '\t' && a[siz] != '\0')
+	if( a[i] != ' ' && a[i] != '\t' && a[i] != '\0')
 	{
 		#ifdef DEBUG
 			fprintf(stderr,"%s no es nulo\n");

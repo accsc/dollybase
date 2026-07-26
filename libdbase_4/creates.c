@@ -193,7 +193,7 @@ dbt_ahead[16] = 0x03; /* Version of dBase III+ */
 
 /********************* End of First block stuff **********************/
 
-if( access(_name,F_OK & R_OK) == 0)
+if( access(_name,F_OK | R_OK) == 0)
 {
 #ifdef DEBUG
 	fprintf(stderr,"Filename exist and wont be overwritten\n");

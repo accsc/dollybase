@@ -131,7 +131,7 @@ int get_fpt_memo_field(char *_fname, int nBlock, char *res, int max)
 	int next_block,i,o;
 	int nSize, nType, nField, _nField[4];
 	
-	if( block == NULL || data_block == NULL)
+	if( block == NULL)
 	{
 #ifdef DEBUG
 		fprintf(stderr,"Memofields. Not enought memory.\n");
@@ -193,7 +193,7 @@ int get_fpt_memo_field(char *_fname, int nBlock, char *res, int max)
 	fflush(stderr);
 	fseek(in,512,SEEK_SET);
 	
-	nType=getc(in)+(getc(in)*256)+(getc(in)*65536)+(getc(in)*16777217);
+	nType=getc(in)+(getc(in)*256)+(getc(in)*65536)+(getc(in)*16777216);
 	fprintf(stderr,"FPT. Record type: %i.\n",nType);
 		fflush(stderr);
 		_nField[0] = getc(in);
@@ -216,8 +216,9 @@ int get_fpt_memo_field(char *_fname, int nBlock, char *res, int max)
 			res[o] = data_block[o];
 		}
 
-	res[o] = '\0';	
+	res[o] = '\0';
 	free(data_block);
 	fclose(in);
+	return 0;
 }
 

@@ -75,7 +75,7 @@ if( se->tipo == 0)
 }
 se_n = field_to_number(se,second_field);
 asp_n = field_to_number(asp,field);
-if( se_n == 0)
+if( se_n <= 0)
 {
 	fprintf(stderr,"DBLinks Error: Field '%s' not exists in database %s\n",second_field,second);
 	fflush(stderr);

@@ -84,9 +84,9 @@ return y;
 
 int potencia(int num, int veces)
 {
-int y;
+int y, result = 1;
 for(y = 0; y<veces; ++y)
-num = num * num;
-return num;
+result = result * num;
+return result;
 }
 

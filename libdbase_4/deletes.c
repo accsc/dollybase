@@ -123,9 +123,9 @@ fseek(a,pos,SEEK_SET);
 b=getc(a);
 fclose(a);
 if(b == '*')
-return 0;
+return VERITAS;
 else
-return -1;
+return FALSO;
 }
 
 int pack(DATABASEDBF *asp)
@@ -154,7 +154,7 @@ for(mas = 1; mas <= (asp->header_len+1); ++mas)
 }
 for(i=1; i<= pos; ++i)
 {
-if( is_deleted(asp) == 0){
+if( is_deleted(asp) == VERITAS){
 fseek(h,asp->rec_len+1,SEEK_CUR);
 estos++;
 }else{
@@ -168,16 +168,25 @@ fprintf(stderr,"Registros eliminados %i/%i\n",estos,pos);
 fflush(stderr);
 #endif
 fclose(h);
-fseek(j,4,SEEK_SET);
-if( pos-estos == 0)
 {
-fputc(1,j); 
+int rec_count = pos - estos;
+int r1, r2, r3, r4;
+r4 = rec_count / 16777216;
+r3 = (rec_count - r4 * 16777216) / 65536;
+r2 = (rec_count - r4 * 16777216 - r3 * 65536) / 256;
+r1 = rec_count - r4 * 16777216 - r3 * 65536 - r2 * 256;
+fseek(j,4,SEEK_SET);
+fputc(r1,j);
+fputc(r2,j);
+fputc(r3,j);
+fputc(r4,j);
+if( rec_count == 0)
+{
 fseek(j,asp->header_len+1,SEEK_SET);
 for(mas=0; mas <= asp->rec_len; ++mas)
 fputc(' ',j);
 }
-else
-fputc(pos-estos,j);
+}
 fclose(j);
 rename(nomb_tmp,asp->name);
 
@@ -270,15 +279,25 @@ int pack_db_with_dbt_file(DATABASEDBF *asp, char *_na)
 #endif
 
 	/* Update number of recs in db */
-	fseek(output,4,SEEK_SET);
-	if( (max_recs - deletes) == 0)
 	{
-		fputc(1,output);
+	int rec_count = max_recs - deletes;
+	int r1, r2, r3, r4;
+	r4 = rec_count / 16777216;
+	r3 = (rec_count - r4 * 16777216) / 65536;
+	r2 = (rec_count - r4 * 16777216 - r3 * 65536) / 256;
+	r1 = rec_count - r4 * 16777216 - r3 * 65536 - r2 * 256;
+	fseek(output,4,SEEK_SET);
+	fputc(r1,output);
+	fputc(r2,output);
+	fputc(r3,output);
+	fputc(r4,output);
+	if( rec_count == 0)
+	{
 		fseek(output,asp->header_len+1,SEEK_SET);
 		for( c2 = 0; c2<=asp->rec_len; ++c2)
 			fputc(' ',output);
-	}else
-		fputc(max_recs - deletes,output);
+	}
+	}
 	
 	fclose(output);
 	rename(name_tmp,asp->name);

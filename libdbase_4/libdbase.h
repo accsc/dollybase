@@ -14,7 +14,6 @@
 
 #ifndef _LIBDBASE_H
 #define _LIBDBASE_H
-#endif
 
 /* Para codigos de errores */
 #define VERITAS 1
@@ -232,5 +231,7 @@ int null_test( char *a);
 
 
 /***************** End of libDbase.h *****************/
+
+#endif /* _LIBDBASE_H */
 
 

@@ -1,0 +1,19 @@
+- > Libdbase v0.4 < -
+
+By Alvaro Cortés. accsc@arbornet.org. 
+
+LibDollyBase is a library used by DollyBase.  
+Its alpha version, not as stable as a normal release.
+
+To use the library compile it and later include the file libdbase.h in your app.
+
+To compile your app don't forget to mention to gcc that add the .a file.
+
+Ex:
+	gcc  foo.c -o foo -I ../blabla libdollybase_0.4_s.a
+
+
+You can use all the functions. To use a database, the structure DATABASEDBF is basic. 
+
+More functions will be implemented.
+

@@ -1,0 +1,33 @@
+TODO list for release libdbase 0.3.2
+
+
+--------------------------- Finish -------------------------------
+- Add support for index. 
+  * Implement skip index based by use of n(t/d)x_search_next...
+  (skip_index is crazy)
+  * Implement creation of index with fast process or less memory use
+    Using memory for indexing or a file to manage recs until some are in memory.
+
+- Add support for DB IV memo fields and improve DB III memo field support. (Pack support untested very primitive)
+  * Calculate which blocks are not pointed by database and pack them.
+  * Adapt memo field handler for variable len of DB IV memo field.
+
+- Add regresion test (indexing only)
+
+- In import module, implement data fetch from SQL databases.(PostreSQL done, to do: Oracle & MySQL (only skeleton db) )
+
+- Better configure & makefile
+
+------------------------- New ------------------------------------
+
+- Add FRM support.
+  * The same as Labels ...
+- Rec copy to new modified database structure.
+
+--------------------------- Tests ---------------------------------
+
+- Test DBIII compatibility with other xBase programs. (Tested only with dBase III, FOXPRO 1.x/2.0 Test Failed Dont read database...Fix it!!!!)
+  * Probably some space character problems.
+- Test DBII create database function. (Actually Untested).
+  * Get dBase II where you can ...
+- DollyBASE can read FOXPRO and DBIII databases.

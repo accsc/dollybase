@@ -62,4 +62,12 @@ int  wa_found(void);                         // FOUND() — 1 if last SEEK/LOCAT
 void wa_set_found(int val);                  // Set FOUND() flag manually.
 void wa_index_skip(int n);                   // SKIP using index order.
 
+/* Per-area LOCATE state */
+void wa_locate_save(void *for_start, void *for_end, void *while_start, void *db);
+void wa_locate_clear(void);
+int  wa_locate_active(void);
+void *wa_locate_for_start(void);
+void *wa_locate_for_end(void);
+void *wa_locate_while_start(void);
+
 #endif /* _WORKAREA_H */

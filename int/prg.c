@@ -20,6 +20,7 @@
 #include "variables.h"
 #include "exprvalue.h"
 #include "workarea.h"
+#include "ui.h"
 
 /* ------------------------------------------------------------------ */
 /* Read an entire file into a malloc'd, null-terminated buffer.        */
@@ -112,10 +113,14 @@ int main(int argc, char *argv[])
     vars_init();
     wa_init();
 
+    /* Initialize ncurses — always needed for @...SAY/GET/READ/CLEAR */
+    ui_init();
+
     Token *tokens = tokenize(source);
     free(source);
 
     if (!tokens) {
+        ui_shutdown();
         vars_shutdown();
         return 1;
     }
@@ -124,6 +129,13 @@ int main(int argc, char *argv[])
 
     ExecStatus st = execute_tokens(tokens);
     free_tokens(tokens);
+
+    /* Show end message and pause so the user can see the screen */
+    touchwin(stdscr);
+    mvaddstr(LINES - 1, 0, " *** END DOLLYBASE RUN ***");
+    refresh();
+    { int gc = getch(); (void)gc; }
+    ui_shutdown();
 
     wa_shutdown();
     vars_shutdown();

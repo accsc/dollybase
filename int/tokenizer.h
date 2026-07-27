@@ -32,6 +32,7 @@ typedef enum {
     TOK_COLON,            /* :                                       */
     TOK_ARROW,            /* ->  relation field access              */
     TOK_ASSIGN,           /* := or = (assignment)                   */
+    TOK_AT,               /* @ for @...SAY / @...GET                */
     TOK_EOF,              /* End of source                          */
     TOK_EOL,              /* End of logical line                    */
 } TokenType;
@@ -91,6 +92,7 @@ typedef enum {
     KW_RECALL,
     KW_REPLACE,
     KW_SEEK,
+    KW_SELECT,
     KW_SET_ORDER,
     KW_SET_RELATION,
     KW_SET_INDEX,
@@ -104,16 +106,24 @@ typedef enum {
     /* Program structure */
     KW_ACTIVATE,
     KW_ARRAY,
+    KW_CLEAR,
     KW_CLEAR_ALL,
     KW_CLEAR_MEMORY,
+    KW_DEFAULT,
     KW_DIMENSION,
+    KW_FOCUS,
     KW_FUNCTION,
+    KW_GET,
     KW_PARAMETERS,
+    KW_PICTURE,
     KW_PROCEDURE,
     KW_LOCAL,
     KW_PRIVATE,
     KW_PUBLIC,
     KW_READ,
+    KW_RANGE,
+    KW_SAY,
+    KW_VALID,
 
     /* I/O / system */
     KW_AT_SAY_GET,        /* @...SAY / @...GET (tokenized as one)   */

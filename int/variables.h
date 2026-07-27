@@ -28,6 +28,7 @@ void vars_shutdown(void);
  * The ExprValue is copied (deep copy for strings).
  */
 void vars_set(const char *name, const ExprValue *value);
+void vars_set_str(const char *name, const char *str);
 
 /**
  * vars_get — retrieve a variable by name. Returns val_null() if not found.

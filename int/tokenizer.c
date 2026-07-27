@@ -40,6 +40,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"CASE",         KW_CASE},
     {"CENTURY",      KW_CENTURY},
     {"CHR",          KW_CHR},
+    {"CLEAR",        KW_CLEAR},
     {"CLEAR ALL",    KW_CLEAR_ALL},
     {"CLEAR MEMORY", KW_CLEAR_MEMORY},
     {"CLOSE",        KW_CLOSE},
@@ -49,6 +50,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"CTOD",         KW_CTOD},
     {"DATE",         KW_DATE},
     {"DAY",          KW_DAY},
+    {"DEFAULT",      KW_DEFAULT},
     {"DELETE",       KW_DELETE},
     {"DELETED",      KW_DELETED},
     {"DIMENSION",    KW_DIMENSION},
@@ -68,9 +70,11 @@ static const KeywordEntry KEYWORDS[] = {
     {"EXIT",         KW_EXIT},
     {"FIELD",        KW_FIELD},
     {"FIELDS",       KW_FIELDS},
+    {"FOCUS",        KW_FOCUS},
     {"FOR",          KW_FOR},
     {"FOUND",        KW_FOUND},
     {"FUNCTION",     KW_FUNCTION},
+    {"GET",          KW_GET},
     {"GO",           KW_GO},
     {"GOBOTTOM",     KW_GOBOTTOM},
     {"GOTO",         KW_GOTO},
@@ -99,11 +103,13 @@ static const KeywordEntry KEYWORDS[] = {
     {"OR",           KW_OR},
     {"PACK",         KW_PACK},
     {"PARAMETERS",   KW_PARAMETERS},
+    {"PICTURE",      KW_PICTURE},
     {"PRINTER",      KW_PRINTER},
     {"PRIVATE",      KW_PRIVATE},
     {"PROCEDURE",    KW_PROCEDURE},
     {"PUBLIC",       KW_PUBLIC},
     {"QUIT",         KW_QUIT},
+    {"RANGE",        KW_RANGE},
     {"READ",         KW_READ},
     {"RECALL",       KW_RECALL},
     {"RECN",         KW_RECN},
@@ -116,8 +122,10 @@ static const KeywordEntry KEYWORDS[] = {
     {"ROUND",        KW_ROUND},
     {"RTRIM",        KW_RTRIM},
     {"SAFETY",       KW_SAFETY},
+    {"SAY",          KW_SAY},
     {"SCOREBOARD",   KW_SCOREBOARD},
     {"SEEK",         KW_SEEK},
+    {"SELECT",       KW_SELECT},
     {"SET",          KW_SET},
     {"SIGN",         KW_SIGN},
     {"SKIP",         KW_SKIP},
@@ -135,6 +143,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"UPPER",        KW_UPPER},
     {"USE",          KW_USE},
     {"VAL",          KW_VAL},
+    {"VALID",        KW_VALID},
     {"WHILE",        KW_WHILE},
     {"WITH",         KW_WITH},
     {"YEAR",         KW_YEAR},
@@ -544,6 +553,9 @@ Token *tokenize(const char *source)
                 pos++;
                 line++;
                 at_line_start = 1;
+            } else if (c == '@') {
+                tok = make_token(TOK_AT, "@", line);
+                pos++;
             } else if (c == '&') {
                 /* Check for && inline comment */
                 if (*(pos + 1) == '&') {
@@ -622,6 +634,7 @@ const char *token_type_name(TokenType type)
     case TOK_COLON:         return "TOK_COLON";
     case TOK_ARROW:         return "TOK_ARROW";
     case TOK_ASSIGN:        return "TOK_ASSIGN";
+    case TOK_AT:            return "TOK_AT";
     case TOK_EOF:           return "TOK_EOF";
     case TOK_EOL:           return "TOK_EOL";
     default:                return "TOK_UNKNOWN";

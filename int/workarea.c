@@ -18,6 +18,17 @@ typedef struct {
 
 static IndexState idx_states[MAX_WORK_AREAS];
 
+/* Per-work-area LOCATE state — so CONTINUE resumes per-area */
+typedef struct {
+    void *for_start;       /* Token* of FOR expr start   */
+    void *for_end;         /* Token* of FOR expr end     */
+    void *while_start;     /* Token* of WHILE expr start */
+    void *db;              /* DATABASEDBF* LOCATE ran on */
+    int active;            /* 1 if a LOCATE was executed */
+} LocateState;
+
+static LocateState locate_states[MAX_WORK_AREAS];
+
 /* ------------------------------------------------------------------ */
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
@@ -526,4 +537,48 @@ void wa_index_skip(int n)
             }
         }
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* Per-area LOCATE state                                               */
+/* ------------------------------------------------------------------ */
+
+void wa_locate_save(void *for_start, void *for_end, void *while_start, void *db)
+{
+    LocateState *ls = &locate_states[selected];
+    ls->for_start = for_start;
+    ls->for_end = for_end;
+    ls->while_start = while_start;
+    ls->db = db;
+    ls->active = 1;
+}
+
+void wa_locate_clear(void)
+{
+    locate_states[selected].active = 0;
+}
+
+int wa_locate_active(void)
+{
+    LocateState *ls = &locate_states[selected];
+    if (!ls->active || ls->db != wa_db()) {
+        ls->active = 0;
+        return 0;
+    }
+    return 1;
+}
+
+void *wa_locate_for_start(void)
+{
+    return locate_states[selected].for_start;
+}
+
+void *wa_locate_for_end(void)
+{
+    return locate_states[selected].for_end;
+}
+
+void *wa_locate_while_start(void)
+{
+    return locate_states[selected].while_start;
 }

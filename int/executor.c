@@ -15,6 +15,7 @@
 #include "parser.h"
 #include "variables.h"
 #include "workarea.h"
+#include "ui.h"
 
 /* ------------------------------------------------------------------ */
 /* Portable case-insensitive string compare                            */
@@ -178,8 +179,13 @@ static ExecStatus exec_replace(Token **cur);
 static ExecStatus exec_append(Token **cur);
 static ExecStatus exec_display(Token **cur);
 static ExecStatus exec_seek(Token **cur);
+static ExecStatus exec_select(Token **cur);
 static ExecStatus exec_index(Token **cur);
 static ExecStatus exec_locate(Token **cur);
+static ExecStatus exec_continue(Token **cur);
+static ExecStatus exec_at(Token **cur);
+static ExecStatus exec_read(Token **cur);
+static ExecStatus exec_clear(Token **cur);
 
 /* Block / loop helpers */
 static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2);
@@ -321,6 +327,10 @@ static ExecStatus exec_statement(Token **cur)
     if (!t || t->type == TOK_EOF || t->type == TOK_EOL)
         return EXEC_OK;
 
+    /* @...SAY / @...GET dispatch */
+    if (t->type == TOK_AT)
+        return exec_at(cur);
+
     /* Keyword-driven dispatch */
     if (t->type == TOK_KEYWORD) {
         switch (t->keyword_id) {
@@ -330,6 +340,7 @@ static ExecStatus exec_statement(Token **cur)
             case KW_RETURN:     return exec_return(cur);
             case KW_PARAMETERS: return exec_parameters(cur);
             case KW_CANCEL:     (*cur) = (*cur)->next; return EXEC_CANCEL;
+            case KW_QUIT:       (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_CANCEL;
             case KW_EXIT:     (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_EXIT;
             case KW_LOOP:     (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_LOOP;
             case KW_SET:      return exec_set(cur);
@@ -347,8 +358,12 @@ static ExecStatus exec_statement(Token **cur)
             case KW_APPEND:   return exec_append(cur);
             case KW_DISPLAY:  return exec_display(cur);
             case KW_SEEK:     return exec_seek(cur);
+            case KW_SELECT:   return exec_select(cur);
             case KW_INDEX:    return exec_index(cur);
             case KW_LOCATE:   return exec_locate(cur);
+            case KW_CONTINUE: return exec_continue(cur);
+            case KW_READ:     return exec_read(cur);
+            case KW_CLEAR:    return exec_clear(cur);
             default:
                 /* Unknown keyword — treat as expression or skip */
                 break;
@@ -1028,8 +1043,13 @@ static ExecStatus exec_print(Token **cur)
     while (*cur && !is_eol_or_eof(*cur)) {
         ExprValue val = parse_expr(cur);
         char *s = val_to_string(&val);
-        if (!first) printf(" ");
-        printf("%s", s);
+        if (ui_is_active()) {
+            if (!first) ui_print(" ");
+            ui_print(s);
+        } else {
+            if (!first) printf(" ");
+            printf("%s", s);
+        }
         free(s);
         free_value(&val);
         first = 0;
@@ -1042,8 +1062,15 @@ static ExecStatus exec_print(Token **cur)
         }
     }
 
-    if (add_newline) printf("\n");
-    fflush(stdout);
+    if (add_newline) {
+        if (ui_is_active()) {
+            ui_print_newline();
+        } else {
+            printf("\n");
+            fflush(stdout);
+        }
+    }
+    ui_refresh();
 
     return EXEC_OK;
 }
@@ -1832,6 +1859,195 @@ static ExecStatus exec_seek(Token **cur)
 }
 
 /* ------------------------------------------------------------------ */
+/* SELECT <n> — switch work area (1-based)                             */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_select(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "SELECT" */
+    int area = 1;
+    if (*cur && (*cur)->type == TOK_INTEGER) {
+        area = atoi((*cur)->value);
+        *cur = (*cur)->next;
+    }
+    wa_select(area);
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* @ row,col SAY <expr>                                                */
+/* @ row,col GET <var> [PICTURE "mask"] [RANGE lo,hi] [VALID expr]     */
+/*             [DEFAULT expr] [FOCUS]                                  */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_at(Token **cur)
+{
+    Token *t = *cur;
+    t = t->next; /* skip "@" */
+
+    /* Parse row (integer expression) */
+    Token *rcur = t;
+    ExprValue row_val = parse_expr(&rcur);
+    int row = (int)val_to_double(&row_val);
+    free_value(&row_val);
+
+    /* Expect comma */
+    if (!rcur || rcur->type != TOK_COMMA) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+    rcur = rcur->next; /* skip "," */
+
+    /* Parse col (integer expression) */
+    ExprValue col_val = parse_expr(&rcur);
+    int col = (int)val_to_double(&col_val);
+    free_value(&col_val);
+
+    /* Expect SAY or GET */
+    if (!rcur || rcur->type != TOK_KEYWORD) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    if (rcur->keyword_id == KW_SAY) {
+        /* @...SAY <expr> */
+        rcur = rcur->next; /* skip "SAY" */
+        ExprValue val = parse_expr(&rcur);
+        char *s = val_to_string(&val);
+        ui_say(row, col, s);
+        ui_refresh();
+        free(s);
+        free_value(&val);
+        skip_to_eol(cur);
+        return EXEC_OK;
+
+    } else if (rcur->keyword_id == KW_GET) {
+        /* @...GET <var> [options] */
+        rcur = rcur->next; /* skip "GET" */
+
+        /* Parse variable name */
+        if (!rcur || rcur->type != TOK_IDENT) {
+            skip_to_eol(cur);
+            return EXEC_OK;
+        }
+        char varname[64];
+        strncpy(varname, rcur->value, sizeof(varname) - 1);
+        varname[sizeof(varname) - 1] = '\0';
+        rcur = rcur->next;
+
+        /* Default field length */
+        int fld_len = 10;
+
+        UiGetField *gf = ui_get_add(row, col, varname, fld_len);
+        (void)gf; /* suppress unused warning */
+
+        /* Parse optional clauses: PICTURE, RANGE, VALID, DEFAULT, FOCUS */
+        while (rcur && !is_eol_or_eof(rcur)) {
+            if (rcur->type == TOK_KEYWORD) {
+                switch (rcur->keyword_id) {
+                    case KW_PICTURE:
+                        rcur = rcur->next; /* skip "PICTURE" */
+                        if (rcur && rcur->type == TOK_STRING) {
+                            ui_get_set_picture(rcur->value);
+                            rcur = rcur->next;
+                        }
+                        break;
+                    case KW_RANGE:
+                        rcur = rcur->next; /* skip "RANGE" */
+                        {
+                            ExprValue lo_val = parse_expr(&rcur);
+                            char lo_str[64];
+                            snprintf(lo_str, sizeof(lo_str), "%g", val_to_double(&lo_val));
+                            free_value(&lo_val);
+                            /* Skip comma */
+                            if (rcur && rcur->type == TOK_COMMA)
+                                rcur = rcur->next;
+                            ExprValue hi_val = parse_expr(&rcur);
+                            char hi_str[64];
+                            snprintf(hi_str, sizeof(hi_str), "%g", val_to_double(&hi_val));
+                            free_value(&hi_val);
+                            ui_get_set_range(lo_str, hi_str);
+                        }
+                        break;
+                    case KW_VALID:
+                        rcur = rcur->next; /* skip "VALID" */
+                        {
+                            Token *vstart = rcur;
+                            Token *vscan = rcur;
+                            int pd = 0;
+                            while (vscan && !is_eol_or_eof(vscan)) {
+                                if (vscan->type == TOK_LPAREN) pd++;
+                                else if (vscan->type == TOK_RPAREN) { if (pd > 0) pd--; }
+                                else if (pd == 0 && vscan->type == TOK_KEYWORD)
+                                    break;
+                                vscan = vscan->next;
+                            }
+                            char expr[256] = "";
+                            Token *e = vstart;
+                            while (e && e != vscan) {
+                                strncat(expr, e->value, sizeof(expr) - strlen(expr) - 1);
+                                strncat(expr, " ", sizeof(expr) - strlen(expr) - 1);
+                                e = e->next;
+                            }
+                            ui_get_set_valid(expr);
+                            rcur = vscan;
+                        }
+                        break;
+                    case KW_DEFAULT:
+                        rcur = rcur->next; /* skip "DEFAULT" */
+                        {
+                            ExprValue dval = parse_expr(&rcur);
+                            char *ds = val_to_string(&dval);
+                            ui_get_set_default(ds);
+                            free(ds);
+                            free_value(&dval);
+                        }
+                        break;
+                    case KW_FOCUS:
+                        rcur = rcur->next; /* skip "FOCUS" */
+                        ui_get_set_focus();
+                        break;
+                    default:
+                        goto done_options;
+                }
+            } else {
+                goto done_options;
+            }
+        }
+        done_options:;
+    }
+
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* READ — process all pending @...GET fields                           */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_read(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "READ" */
+    skip_to_eol(cur);
+    ui_read();
+    ui_get_clear();
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* CLEAR — clear screen                                                */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_clear(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "CLEAR" */
+    skip_to_eol(cur);
+    ui_clear();
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
 /* INDEX ON <expression> TO <filename>                                 */
 /* ------------------------------------------------------------------ */
 
@@ -2021,6 +2237,7 @@ static ExecStatus exec_locate(Token **cur)
     /* Expect "FOR" */
     if (!*cur || !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_FOR)) {
         skip_to_eol(cur);
+        wa_locate_clear();
         return EXEC_OK;
     }
     (*cur) = (*cur)->next; /* skip "FOR" */
@@ -2055,6 +2272,9 @@ static ExecStatus exec_locate(Token **cur)
     if (for_end && for_end->type == TOK_KEYWORD && for_end->keyword_id == KW_WHILE) {
         while_start = for_end->next;
     }
+
+    /* Save locate state for CONTINUE (per work area) */
+    wa_locate_save(for_start, for_end, while_start, wa_db());
 
     /* Advance cur past the entire LOCATE line */
     skip_to_eol(cur);
@@ -2100,6 +2320,72 @@ static ExecStatus exec_locate(Token **cur)
         if (fresult) {
             found = 1;
             break; /* Stay on this record */
+        }
+    }
+
+    wa_set_found(found);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* CONTINUE — resume LOCATE scan from current record + 1               */
+/*   Uses per-work-area locate state stored in workarea module         */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_continue(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "CONTINUE" */
+    skip_to_eol(cur);
+
+    if (!wa_locate_active()) {
+        wa_set_found(0);
+        return EXEC_OK;
+    }
+
+    DATABASEDBF *db = wa_db();
+    if (!db) {
+        wa_set_found(0);
+        return EXEC_OK;
+    }
+
+    Token *for_start   = wa_locate_for_start();
+    Token *while_start = wa_locate_while_start();
+
+    int total = reccount(db);
+    int found = 0;
+    int start_rec = wa_recno() + 1;
+
+    if (start_rec > total) {
+        wa_set_found(0);
+        return EXEC_OK;
+    }
+
+    int last_valid_rec = 0;
+
+    for (int rec = start_rec; rec <= total; rec++) {
+        gotos(wa_db_ptr(), rec);
+
+        if (while_start) {
+            Token *wcur = while_start;
+            ExprValue wval = parse_expr(&wcur);
+            int wresult = val_to_logical(&wval);
+            free_value(&wval);
+            if (!wresult) {
+                if (last_valid_rec > 0)
+                    gotos(wa_db_ptr(), last_valid_rec);
+                break;
+            }
+            last_valid_rec = rec;
+        }
+
+        Token *fcur = for_start;
+        ExprValue fval = parse_expr(&fcur);
+        int fresult = val_to_logical(&fval);
+        free_value(&fval);
+
+        if (fresult) {
+            found = 1;
+            break;
         }
     }
 

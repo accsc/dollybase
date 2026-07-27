@@ -109,4 +109,70 @@ LOCATE FOR IIF(A->AN_EDICION >= 1990, .T., .F.)
 LOCATE FOR SUBSTR(A->TITULO, 1, 2) = "EN"
 ? "Test 25 - LOCATE FOR SUBSTR: FOUND=", FOUND(), " RECNO=", RECNO()
 
+* ============================================================
+* CONTINUE tests
+* ============================================================
+
+* Test 26: CONTINUE finds next match after LOCATE
+LOCATE FOR A->AN_EDICION >= 1990
+? "Test 26a - LOCATE: FOUND=", FOUND(), " RECNO=", RECNO()
+first_rec = RECNO()
+CONTINUE
+? "Test 26b - CONTINUE: FOUND=", FOUND(), " RECNO=", RECNO()
+? "Test 26c - second > first:", RECNO() > first_rec
+second_rec = RECNO()
+
+* Test 27: CONTINUE finds a third match
+CONTINUE
+? "Test 27 - CONTINUE again: FOUND=", FOUND(), " RECNO=", RECNO()
+? "Test 27b - third > second:", RECNO() > second_rec
+
+* Test 28: CONTINUE with WHILE guard
+LOCATE FOR A->AN_EDICION >= 1990 WHILE RECNO() <= 20
+? "Test 28a - LOCATE FOR..WHILE: FOUND=", FOUND(), " RECNO=", RECNO()
+first_rec = RECNO()
+CONTINUE
+? "Test 28b - CONTINUE (should respect WHILE): FOUND=", FOUND(), " RECNO=", RECNO()
+
+* Test 29: CONTINUE without prior LOCATE (should return FOUND=.F.)
+locate_active = 0
+LOCATE FOR A->AN_EDICION >= 9999
+? "Test 29a - LOCATE no match: FOUND=", FOUND()
+* Now CONTINUE after a failed LOCATE should still work (resume from current+1)
+CONTINUE
+? "Test 29b - CONTINUE after no match: FOUND=", FOUND()
+
+* Test 30: CONTINUE exhausts all records
+LOCATE FOR A->AN_EDICION >= 9999
+? "Test 30a - LOCATE impossible: FOUND=", FOUND()
+CONTINUE
+? "Test 30b - CONTINUE impossible: FOUND=", FOUND()
+
+* Test 31: CONTINUE invalidated after CLOSE + USE (DB pointer changed)
+LOCATE FOR A->AN_EDICION >= 1990
+? "Test 31a - LOCATE on books_memo: FOUND=", FOUND(), " RECNO=", RECNO()
+CLOSE
+USE books_memo
+CONTINUE
+? "Test 31b - CONTINUE after CLOSE+USE (DB changed): FOUND=", FOUND()
+
+* Test 32: Per-area LOCATE — LOCATE on area 1, switch to area 2,
+*         LOCATE on area 2, CONTINUE on area 2, switch back, CONTINUE on area 1
+LOCATE FOR A->AN_EDICION >= 1990
+? "Test 32a - LOCATE area 1: FOUND=", FOUND(), " RECNO=", RECNO()
+area1_rec = RECNO()
+SELECT 2
+USE books_memo
+LOCATE FOR A->AN_EDICION >= 2000
+? "Test 32b - LOCATE area 2: FOUND=", FOUND(), " RECNO=", RECNO()
+CONTINUE
+? "Test 32c - CONTINUE area 2: FOUND=", FOUND(), " RECNO=", RECNO()
+SELECT 1
+CONTINUE
+? "Test 32d - CONTINUE area 1 (after area 2): FOUND=", FOUND(), " RECNO=", RECNO()
+? "Test 32e - area1 advanced:", RECNO() > area1_rec
+
+SELECT 2
+CLOSE
+SELECT 1
 CLOSE

@@ -113,16 +113,6 @@ struct campos fields;
 
 
 
-/* Algunos tipos */
-#define VARIABLE 1
-#define FIELD 2
-#define STRING 3
-#define INTEGERS 4
-#define MAYOR_QUE 5
-#define MENOR_QUE 6
-#define EQUAL 7
-
-
 /* functions low.c */
 
 void use( char *file, DATABASEDBF **asp);

@@ -75,6 +75,13 @@ void vars_set(const char *name, const ExprValue *value)
     store[slot].value = copy_value(value);
 }
 
+void vars_set_str(const char *name, const char *str)
+{
+    ExprValue v = val_string(str ? str : "");
+    vars_set(name, &v);
+    free_value(&v);
+}
+
 ExprValue vars_get(const char *name)
 {
     int idx = find_index(name);

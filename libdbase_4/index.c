@@ -490,3 +490,115 @@ FOUND search_ndx_next(NTX *ind, char *criteria, int last_page, int last_pos)
 	return fin;
 }
 
+/* ==========================================================================
+ * Generic NDX creation from pre-computed (key, recno) pairs.
+ * The caller provides sorted keys (case-insensitive sort assumed).
+ * Keys are NOT freed by this function — caller retains ownership.
+ * key_len is the maximum key length (used for padding).
+ * ========================================================================== */
+
+int create_index_ndx_generic(char **keys, int *recnos, int count,
+                              int key_len, const char *field_name,
+                              const char *_fname)
+{
+    if (!keys || !recnos || count <= 0 || !_fname)
+        return -1;
+
+    if (key_len <= 0 || key_len > 256)
+        key_len = 50;
+
+    int entry_size = key_len + 8;
+    int entries_per_page = (512 - 4) / entry_size;
+    if (entries_per_page < 1) entries_per_page = 1;
+
+    int num_leaves = (count + entries_per_page - 1) / entries_per_page;
+    int root_page = num_leaves + 1;
+    int total_pages = root_page + 1;
+
+    FILE *f = fopen(_fname, "wb");
+    if (!f) return -1;
+
+    /* --- Page 0: header --- */
+    {
+        char header[512];
+        memset(header, 0, 512);
+        header[0] = root_page & 0xFF;
+        header[1] = (root_page >> 8) & 0xFF;
+        header[2] = 0;
+        header[3] = 0;
+        header[4] = total_pages & 0xFF;
+        header[5] = (total_pages >> 8) & 0xFF;
+        header[6] = 0;
+        header[7] = 0;
+        header[12] = key_len & 0xFF;
+        header[13] = (key_len >> 8) & 0xFF;
+        header[14] = entries_per_page & 0xFF;
+        header[15] = (entries_per_page >> 8) & 0xFF;
+        if (field_name) {
+            int flen = (int)strlen(field_name);
+            if (flen > 256) flen = 256;
+            memcpy(header + 24, field_name, flen);
+        }
+        fwrite(header, 1, 512, f);
+    }
+
+    /* --- Pages 1..num_leaves: leaf data --- */
+    for (int p = 0; p < num_leaves; p++) {
+        int start = p * entries_per_page;
+        int batch = count - start;
+        if (batch > entries_per_page) batch = entries_per_page;
+
+        char page[512];
+        memset(page, 0, 512);
+        page[0] = batch & 0xFF;
+        page[1] = (batch >> 8) & 0xFF;
+
+        for (int j = 0; j < batch; j++) {
+            int idx = start + j;
+            int base = 4 + j * entry_size;
+            int rec = recnos[idx];
+            page[base + 4] = rec & 0xFF;
+            page[base + 5] = (rec >> 8) & 0xFF;
+            page[base + 6] = (rec >> 16) & 0xFF;
+            page[base + 7] = (rec >> 24) & 0xFF;
+            int klen = (int)strlen(keys[idx]);
+            if (klen > key_len) klen = key_len;
+            memcpy(page + base + 8, keys[idx], klen);
+            for (int k = klen; k < key_len; k++)
+                page[base + 8 + k] = ' ';
+        }
+        fwrite(page, 1, 512, f);
+    }
+
+    /* --- Root page: interior node --- */
+    {
+        char page[512];
+        memset(page, 0, 512);
+        int root_entries = num_leaves;
+        if (root_entries > entries_per_page)
+            root_entries = entries_per_page;
+        page[0] = root_entries & 0xFF;
+        page[1] = (root_entries >> 8) & 0xFF;
+
+        for (int e = 0; e < root_entries; e++) {
+            int base = 4 + e * entry_size;
+            int child = e + 1;
+            page[base]     = child & 0xFF;
+            page[base + 1] = (child >> 8) & 0xFF;
+            page[base + 2] = 0;
+            page[base + 3] = 0;
+            int first_in_leaf = e * entries_per_page;
+            char *sep_key = keys[first_in_leaf];
+            int klen = (int)strlen(sep_key);
+            if (klen > key_len) klen = key_len;
+            memcpy(page + base + 8, sep_key, klen);
+            for (int k = klen; k < key_len; k++)
+                page[base + 8 + k] = ' ';
+        }
+        fwrite(page, 1, 512, f);
+    }
+
+    fclose(f);
+    return 0;
+}
+

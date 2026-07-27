@@ -7,6 +7,7 @@
 
 #include "parser.h"
 #include "variables.h"
+#include "workarea.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -66,6 +67,9 @@ static ExprValue builtin_recno(Token **cur, ParseError *err);
 static ExprValue builtin_recn(Token **cur, ParseError *err);
 static ExprValue builtin_eof(Token **cur, ParseError *err);
 static ExprValue builtin_bof(Token **cur, ParseError *err);
+static ExprValue builtin_alias(Token **cur, ParseError *err);
+static ExprValue builtin_deleted(Token **cur, ParseError *err);
+static ExprValue builtin_found(Token **cur, ParseError *err);
 static ExprValue builtin_sign(Token **cur, ParseError *err);
 static ExprValue builtin_max(Token **cur, ParseError *err);
 static ExprValue builtin_min(Token **cur, ParseError *err);
@@ -384,14 +388,53 @@ static ExprValue parse_unary_expr(Token **cur, ParseError *err) {
 
     /* Unary minus */
     if (cur && *cur && (*cur)->type == TOK_OP_ARITH && strcmp((*cur)->value, "-") == 0) {
-        /* Only treat as unary minus if the previous token was an operator or opening paren */
-        /* For simplicity in expression context, always consume as unary minus here */
         *cur = (*cur)->next;
         ExprValue inner = parse_unary_expr(cur, err);
         if (*err != PARSE_OK) return inner;
         double v = val_to_double(&inner);
         free_value(&inner);
         return val_real(-v);
+    }
+
+    /* Macro expansion: &variable — resolve variable, evaluate its string as expression */
+    if (cur && *cur && (*cur)->type == TOK_OP_LOGIC && strcmp((*cur)->value, "&") == 0) {
+        *cur = (*cur)->next; /* skip '&' */
+        if (!*cur) {
+            if (err) *err = PARSE_ERROR_SYNTAX;
+            return val_null();
+        }
+        /* Expect an identifier or string literal */
+        ExprValue macro_val;
+        if ((*cur)->type == TOK_IDENT) {
+            Token *saved = (*cur)->next;
+            if (vars_exists((*cur)->value)) {
+                macro_val = vars_get((*cur)->value);
+            } else {
+                macro_val = val_null();
+            }
+            *cur = saved;
+        } else if ((*cur)->type == TOK_STRING) {
+            /* &"literal" — use the string literal directly */
+            Token *saved = (*cur)->next;
+            macro_val = parse_primary(cur, err);
+            (void)saved;
+        } else {
+            if (err) *err = PARSE_ERROR_SYNTAX;
+            return val_null();
+        }
+        /* Get the string content and evaluate it as a dBase expression */
+        char *s = val_to_string(&macro_val);
+        free_value(&macro_val);
+        if (s && *s) {
+            Token *tokens = tokenize(s);
+            Token *tcur = tokens;
+            ExprValue result = parse_expression(&tcur, err);
+            free(s);
+            free_tokens(tokens);
+            return result;
+        }
+        free(s);
+        return val_null();
     }
 
     return parse_primary(cur, err);
@@ -519,10 +562,88 @@ static ExprValue parse_primary(Token **cur, ParseError *err) {
         }
 
         case TOK_IDENT: {
+            /* Check for -> field access: TABLE->FIELD */
+            Token *saved = *cur;
+            *cur = tok->next;
+            if (*cur && (*cur)->type == TOK_ARROW) {
+                /* TABLE->FIELD access */
+                *cur = (*cur)->next; /* skip -> */
+                if (*cur && (*cur)->type == TOK_IDENT) {
+                    const char *fieldname = (*cur)->value;
+                    int fidx = wa_field_to_number(fieldname);
+                    if (fidx > 0) {
+                        char *val = wa_get_field(fidx);
+                        char type = wa_field_type(fidx);
+                        ExprValue result;
+                        if (val) {
+                            switch (type) {
+                                case 'N': {
+                                    double d = atof(val);
+                                    if (d == (int)d && strstr(val, ".") == NULL)
+                                        result = val_integer((int)d);
+                                    else
+                                        result = val_real(d);
+                                    break;
+                                }
+                                case 'D':
+                                    result = val_date(val);
+                                    break;
+                                case 'L':
+                                    result = val_logical(val[0] == 'T' || val[0] == 'Y');
+                                    break;
+                                default:
+                                    result = val_string(val);
+                                    break;
+                            }
+                            free(val);
+                        } else {
+                            result = val_null();
+                        }
+                        *cur = (*cur)->next;
+                        return result;
+                    }
+                }
+                /* Field not found — fall through to variable lookup */
+            }
             /* Variable reference — look up in the variable store. */
+            *cur = saved;
             *cur = tok->next;
             if (vars_exists(tok->value)) {
                 return vars_get(tok->value);
+            }
+            /* Check if it's a field name in the current DBF */
+            {
+                int fidx = wa_field_to_number(tok->value);
+                if (fidx > 0) {
+                    char *val = wa_get_field(fidx);
+                    char type = wa_field_type(fidx);
+                    ExprValue result;
+                    if (val) {
+                        switch (type) {
+                            case 'N': {
+                                double d = atof(val);
+                                if (d == (int)d && strstr(val, ".") == NULL)
+                                    result = val_integer((int)d);
+                                else
+                                    result = val_real(d);
+                                break;
+                            }
+                            case 'D':
+                                result = val_date(val);
+                                break;
+                            case 'L':
+                                result = val_logical(val[0] == 'T' || val[0] == 'Y');
+                                break;
+                            default:
+                                result = val_string(val);
+                                break;
+                        }
+                        free(val);
+                    } else {
+                        result = val_null();
+                    }
+                    return result;
+                }
             }
             return val_null();
         }
@@ -544,15 +665,18 @@ static ExprValue parse_primary(Token **cur, ParseError *err) {
 static const FuncEntry func_table[] = {
     { KW_ABS,       builtin_abs },
     { KW_ALLTRIM,   builtin_alltrim },
+    { KW_ALIAS,     builtin_alias },
     { KW_AT_FUNC,   builtin_at_func },
     { KW_BETWEEN,   builtin_between },
     { KW_BOF,       builtin_bof },
     { KW_CTOD,      builtin_ctod },
     { KW_DATE,      builtin_date_func },
     { KW_DAY,       builtin_day },
+    { KW_DELETED,   builtin_deleted },
     { KW_DTOC,      builtin_dtoc },
     { KW_EMPTY,     builtin_empty },
     { KW_EOF,       builtin_eof },
+    { KW_FOUND,     builtin_found },
     { KW_IIF,       builtin_iif },
     { KW_INT_FUNC,  builtin_int_func },
     { KW_LEFT_FUNC, builtin_left_func },
@@ -1075,26 +1199,40 @@ static ExprValue builtin_year(Token **cur, ParseError *err) {
 
 static ExprValue builtin_recno(Token **cur, ParseError *err) {
     (void)cur; (void)err;
-    /* Stub: no DBF open yet */
-    return val_integer(0);
+    return val_integer(wa_recno());
 }
 
 static ExprValue builtin_recn(Token **cur, ParseError *err) {
     (void)cur; (void)err;
-    /* RECN() — total record count, stub */
-    return val_integer(0);
+    return val_integer(wa_reccount());
 }
 
 static ExprValue builtin_eof(Token **cur, ParseError *err) {
     (void)cur; (void)err;
-    /* Stub: no DBF open → treat as EOF */
-    return val_logical(1);
+    return val_logical(wa_eof());
 }
 
 static ExprValue builtin_bof(Token **cur, ParseError *err) {
     (void)cur; (void)err;
-    /* Stub */
-    return val_logical(1);
+    return val_logical(wa_bof());
+}
+
+static ExprValue builtin_alias(Token **cur, ParseError *err) {
+    (void)cur; (void)err;
+    char *name = wa_dbf_name();
+    ExprValue res = val_string(name ? name : "");
+    free(name);
+    return res;
+}
+
+static ExprValue builtin_deleted(Token **cur, ParseError *err) {
+    (void)cur; (void)err;
+    return val_logical(wa_is_deleted());
+}
+
+static ExprValue builtin_found(Token **cur, ParseError *err) {
+    (void)cur; (void)err;
+    return val_logical(wa_found());
 }
 
 static ExprValue builtin_sign(Token **cur, ParseError *err) {

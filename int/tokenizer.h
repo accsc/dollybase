@@ -73,6 +73,7 @@ typedef enum {
     KW_CLOSE,
     KW_CONTINUE,
     KW_DELETE,
+    KW_DELETED,
     KW_DISPLAY,
     KW_GO,
     KW_GOTOP,
@@ -142,6 +143,7 @@ typedef enum {
     KW_EOF,
     KW_FIELD,
     KW_FIELDS,
+    KW_FOUND,
     KW_IIF,
     KW_INT_FUNC,          /* INT()                                  */
     KW_LEFT_FUNC,         /* LEFT()                                 */

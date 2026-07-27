@@ -19,6 +19,7 @@
 #include "executor.h"
 #include "variables.h"
 #include "exprvalue.h"
+#include "workarea.h"
 
 /* ------------------------------------------------------------------ */
 /* Read an entire file into a malloc'd, null-terminated buffer.        */
@@ -109,6 +110,7 @@ int main(int argc, char *argv[])
     }
 
     vars_init();
+    wa_init();
 
     Token *tokens = tokenize(source);
     free(source);
@@ -123,6 +125,7 @@ int main(int argc, char *argv[])
     ExecStatus st = execute_tokens(tokens);
     free_tokens(tokens);
 
+    wa_shutdown();
     vars_shutdown();
 
     /* Map ExecStatus to exit codes */

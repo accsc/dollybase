@@ -231,7 +231,7 @@ return 0;
 */
 int eof_dbf(DATABASEDBF *asp)
 {
-	if(asp->current == asp->recnos+1) 
+	if(asp->current >= asp->recnos) 
 	    return VERITAS;
 	else
 	    return FALSO;

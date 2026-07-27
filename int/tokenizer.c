@@ -47,6 +47,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"DATE",         KW_DATE},
     {"DAY",          KW_DAY},
     {"DELETE",       KW_DELETE},
+    {"DELETED",      KW_DELETED},
     {"DIMENSION",    KW_DIMENSION},
     {"DISPLAY",      KW_DISPLAY},
     {"DMY",          KW_DMY},
@@ -64,15 +65,16 @@ static const KeywordEntry KEYWORDS[] = {
     {"FIELD",        KW_FIELD},
     {"FIELDS",       KW_FIELDS},
     {"FOR",          KW_FOR},
+    {"FOUND",        KW_FOUND},
     {"FUNCTION",     KW_FUNCTION},
     {"GO",           KW_GO},
     {"GOBOTTOM",     KW_GOBOTTOM},
     {"GOTO",         KW_GOTO},
     {"GOTOP",        KW_GOTOP},
     {"IF",           KW_IF},
+    {"IIF",          KW_IIF},
     {"INDEX",        KW_INDEX},
     {"INSERT",       KW_INSERT},
-    {"IIF",          KW_IIF},
     {"INT",          KW_INT_FUNC},
     {"JOIN",         KW_JOIN},
     {"LABEL",        KW_LABEL},
@@ -92,8 +94,8 @@ static const KeywordEntry KEYWORDS[] = {
     {"OR",           KW_OR},
     {"PACK",         KW_PACK},
     {"PARAMETERS",   KW_PARAMETERS},
-    {"PROCEDURE",    KW_PROCEDURE},
     {"PRINTER",      KW_PRINTER},
+    {"PROCEDURE",    KW_PROCEDURE},
     {"PRIVATE",      KW_PRIVATE},
     {"PUBLIC",       KW_PUBLIC},
     {"QUIT",         KW_QUIT},
@@ -537,9 +539,9 @@ Token *tokenize(const char *source)
                     consume_to_eol(&pos, &line);
                     continue;
                 } else {
-                    /* Unknown char — skip */
+                    /* & — macro expansion / concatenation operator */
+                    tok = make_token(TOK_OP_LOGIC, "&", line);
                     pos++;
-                    continue;
                 }
             } else {
                 /* Unknown character — skip silently */

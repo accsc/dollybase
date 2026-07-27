@@ -151,8 +151,8 @@ int is_deleted(DATABASEDBF *asp);
 int pack(DATABASEDBF *asp);
 
 /* Acciones con registros o campos */
-int average_campo(DATABASEDBF *asp, char *campo, int nexts);
-int sum_campo(DATABASEDBF *asp, char *campo, int nexts);
+long long average_campo(DATABASEDBF *asp, char *campo, int nexts);
+long long sum_campo(DATABASEDBF *asp, char *campo, int nexts);
 int field_name(DATABASEDBF *asp, int campon, char **name);
 void skip(DATABASEDBF **asp);
 DATABASEDBF skip_index(DATABASEDBF asp);
@@ -186,8 +186,12 @@ void display_ndx_info(NDX *ind);
 FOUND search_ntx_next(NTX *ind,char *criteria,int last_page,int last_pos);
 FOUND search_ndx_next(NTX *ind, char *criteria, int last_page,int last_pos);
 FOUND seek_index(NTX *ind, char *criteria, int type);
+FOUND seek_ndx_btree(NDX *ind, char *criteria);
+FOUND seek_ntx_btree(NTX *ind, char *criteria);
 int search(char *str, char *cri, int mode);
-/*int create_index_ndx_fast(DATABASEDBF *asp, char *criteria, char *_fname);*/
+int create_index_ndx_generic(char **keys, int *recnos, int count,
+                              int key_len, const char *field_name,
+                              const char *_fname);
 
 /* For export */
 int export_as_csv(DATABASEDBF *asp, char sep, char *_fname);

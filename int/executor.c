@@ -14,6 +14,7 @@
 #include "executor.h"
 #include "parser.h"
 #include "variables.h"
+#include "workarea.h"
 
 /* ------------------------------------------------------------------ */
 /* Portable case-insensitive string compare                            */
@@ -169,6 +170,15 @@ static ExecStatus exec_close(Token **cur);
 static ExecStatus exec_go(Token **cur);
 static ExecStatus exec_print(Token **cur);
 static ExecStatus exec_assign(Token **cur);
+static ExecStatus exec_delete(Token **cur);
+static ExecStatus exec_recall(Token **cur);
+static ExecStatus exec_pack(Token **cur);
+static ExecStatus exec_zap(Token **cur);
+static ExecStatus exec_replace(Token **cur);
+static ExecStatus exec_append(Token **cur);
+static ExecStatus exec_display(Token **cur);
+static ExecStatus exec_seek(Token **cur);
+static ExecStatus exec_index(Token **cur);
 
 /* Block / loop helpers */
 static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2);
@@ -325,9 +335,18 @@ static ExecStatus exec_statement(Token **cur)
             case KW_SKIP:     return exec_skip(cur);
             case KW_USE:      return exec_use(cur);
             case KW_CLOSE:    return exec_close(cur);
-            case KW_GOTOP:    (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_OK;
-            case KW_GOBOTTOM: (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_OK;
+            case KW_GOTOP:    wa_goto_top(); (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_OK;
+            case KW_GOBOTTOM: wa_goto_bottom(); (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_OK;
             case KW_GO:       return exec_go(cur);
+            case KW_DELETE:   return exec_delete(cur);
+            case KW_RECALL:   return exec_recall(cur);
+            case KW_PACK:     return exec_pack(cur);
+            case KW_ZAP:      return exec_zap(cur);
+            case KW_REPLACE:  return exec_replace(cur);
+            case KW_APPEND:   return exec_append(cur);
+            case KW_DISPLAY:  return exec_display(cur);
+            case KW_SEEK:     return exec_seek(cur);
+            case KW_INDEX:    return exec_index(cur);
             default:
                 /* Unknown keyword — treat as expression or skip */
                 break;
@@ -1044,6 +1063,27 @@ static ExecStatus exec_set(Token **cur)
     KeywordId setting = (*cur)->keyword_id;
     (*cur) = (*cur)->next;
 
+    /* Handle SET INDEX TO <file> */
+    if (setting == KW_INDEX || setting == KW_SET_INDEX) {
+        /* Skip optional "TO" */
+        if (*cur && (*cur)->type == TOK_IDENT &&
+            port_strcasecmp((*cur)->value, "to") == 0) {
+            *cur = (*cur)->next;
+        }
+        if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_STRING)) {
+            char idxfile[1024];
+            strncpy(idxfile, (*cur)->value, sizeof(idxfile) - 1);
+            idxfile[sizeof(idxfile) - 1] = '\0';
+            *cur = (*cur)->next;
+            wa_set_index(idxfile);
+        } else {
+            /* SET INDEX TO with no file = clear */
+            wa_set_index_clear();
+        }
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
     /* Read ON/OFF or TO <value> */
     if (*cur && (*cur)->type == TOK_IDENT) {
         const char *flag = (*cur)->value;
@@ -1067,8 +1107,23 @@ static ExecStatus exec_set(Token **cur)
 
 static ExecStatus exec_skip(Token **cur)
 {
-    /* SKIP [n] — advance record pointer; not implemented without DBF */
-    (*cur) = (*cur)->next;
+    (*cur) = (*cur)->next; /* skip "SKIP" */
+    int n = 1;
+
+    if (*cur && !is_eol_or_eof(*cur)) {
+        if (*cur && (*cur)->type == TOK_OP_ARITH && strcmp((*cur)->value, "-") == 0) {
+            *cur = (*cur)->next;
+            if (*cur && ((*cur)->type == TOK_INTEGER || (*cur)->type == TOK_REAL)) {
+                n = -atoi((*cur)->value);
+                *cur = (*cur)->next;
+            }
+        } else if (*cur && ((*cur)->type == TOK_INTEGER || (*cur)->type == TOK_REAL)) {
+            n = atoi((*cur)->value);
+            *cur = (*cur)->next;
+        }
+    }
+
+    wa_skip(n);
     skip_to_eol(cur);
     return EXEC_OK;
 }
@@ -1079,8 +1134,24 @@ static ExecStatus exec_skip(Token **cur)
 
 static ExecStatus exec_use(Token **cur)
 {
-    /* USE <filename> [EXCLUSIVE] ... — not implemented without libdbase link */
-    (*cur) = (*cur)->next;
+    (*cur) = (*cur)->next; /* skip "USE" */
+    if (!*cur) { skip_to_eol(cur); return EXEC_OK; }
+
+    char filename[1024];
+    if ((*cur)->type == TOK_IDENT) {
+        strncpy(filename, (*cur)->value, sizeof(filename) - 1);
+        filename[sizeof(filename) - 1] = '\0';
+        *cur = (*cur)->next;
+    } else if ((*cur)->type == TOK_STRING) {
+        strncpy(filename, (*cur)->value, sizeof(filename) - 1);
+        filename[sizeof(filename) - 1] = '\0';
+        *cur = (*cur)->next;
+    } else {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    wa_use(filename, -1);
     skip_to_eol(cur);
     return EXEC_OK;
 }
@@ -1091,8 +1162,8 @@ static ExecStatus exec_use(Token **cur)
 
 static ExecStatus exec_close(Token **cur)
 {
-    /* CLOSE DATABASES / ALL — not implemented without work areas */
-    (*cur) = (*cur)->next;
+    (*cur) = (*cur)->next; /* skip "CLOSE" */
+    wa_close_all();
     skip_to_eol(cur);
     return EXEC_OK;
 }
@@ -1103,8 +1174,343 @@ static ExecStatus exec_close(Token **cur)
 
 static ExecStatus exec_go(Token **cur)
 {
-    /* GO <n> / GO TOP / GO BOTTOM — not implemented without DBF */
-    (*cur) = (*cur)->next;
+    (*cur) = (*cur)->next; /* skip "GO" */
+    if (!*cur || is_eol_or_eof(*cur)) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    /* Handle "GO TOP" and "GO BOTTOM" (tokenized as GO + IDENT "top"/"bottom") */
+    if ((*cur)->type == TOK_IDENT &&
+        port_strcasecmp((*cur)->value, "top") == 0) {
+        *cur = (*cur)->next;
+        wa_goto_top();
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+    if ((*cur)->type == TOK_IDENT &&
+        port_strcasecmp((*cur)->value, "bottom") == 0) {
+        *cur = (*cur)->next;
+        wa_goto_bottom();
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    ExprValue val = parse_expr(cur);
+    int rec = val_to_int(&val);
+    free_value(&val);
+    wa_goto(rec);
+
     skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* DELETE                                                              */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_delete(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "DELETE" */
+    wa_delete();
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* RECALL                                                              */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_recall(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "RECALL" */
+    wa_recall();
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* PACK                                                                */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_pack(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "PACK" */
+    wa_pack();
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* ZAP                                                                 */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_zap(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "ZAP" */
+    wa_zap();
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* REPLACE <field> WITH <expr>                                         */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_replace(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "REPLACE" */
+    if (!*cur || (*cur)->type != TOK_IDENT) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    char fieldname[256];
+    strncpy(fieldname, (*cur)->value, sizeof(fieldname) - 1);
+    fieldname[sizeof(fieldname) - 1] = '\0';
+    *cur = (*cur)->next;
+
+    /* Skip "WITH" */
+    if (*cur && (*cur)->type == TOK_KEYWORD &&
+        port_strcasecmp((*cur)->value, "WITH") == 0) {
+        *cur = (*cur)->next;
+    }
+
+    ExprValue val = parse_expr(cur);
+    char *s = val_to_string(&val);
+    wa_replace(fieldname, s);
+    free(s);
+    free_value(&val);
+
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* APPEND BLANK                                                        */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_append(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "APPEND" */
+    wa_append_blank();
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* DISPLAY STRUCTURE                                                   */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_display(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "DISPLAY" */
+    /* Expect "STRUCTURE" or "STATUS" — skip it */
+    if (*cur && !is_eol_or_eof(*cur)) {
+        *cur = (*cur)->next;
+    }
+    DATABASEDBF *db = wa_db();
+    if (!db) {
+        fprintf(stdout, "No database in use\n");
+    } else {
+        display_structure(db);
+    }
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* SEEK <expr>                                                         */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_seek(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "SEEK" */
+    if (!*cur || is_eol_or_eof(*cur)) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    ExprValue val = parse_expr(cur);
+    char *s = val_to_string(&val);
+    wa_seek(s);
+    free(s);
+    free_value(&val);
+
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* INDEX ON <expression> TO <filename>                                 */
+/* ------------------------------------------------------------------ */
+
+/* Helper: compare IndexEntry for qsort */
+typedef struct {
+    char *key;
+    int   recno;
+} _IdxEntry;
+
+static int _cmp_idx(const void *a, const void *b)
+{
+    const _IdxEntry *ea = (const _IdxEntry *)a;
+    const _IdxEntry *eb = (const _IdxEntry *)b;
+    int c = port_strcasecmp(ea->key, eb->key);
+    if (c != 0) return c;
+    return ea->recno - eb->recno;
+}
+
+static ExecStatus exec_index(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "INDEX" */
+
+    /* Expect "ON" */
+    if (!*cur || !((*cur)->type == TOK_IDENT &&
+        port_strcasecmp((*cur)->value, "on") == 0)) {
+        fprintf(stderr, "prg: expected INDEX ON\n");
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+    *cur = (*cur)->next; /* skip "ON" */
+
+    /* Parse the key expression — save its token range for re-evaluation */
+    Token *expr_start = *cur;
+    /* We need to figure out where the expression ends (before "TO").
+     * Scan ahead to find "TO" (case-insensitive IDENT). */
+    {
+        Token *scan = *cur;
+        while (scan && scan->type != TOK_EOF && scan->type != TOK_EOL) {
+            if (scan->type == TOK_IDENT &&
+                port_strcasecmp(scan->value, "to") == 0) {
+                /* Expression ends before this token */
+                break;
+            }
+            scan = scan->next;
+        }
+    }
+
+    /* Evaluate the expression once to determine key type/length */
+    ExprValue val = parse_expr(cur);
+    char *sample_key = val_to_string(&val);
+    int key_len = (int)strlen(sample_key);
+    if (key_len < 1) key_len = 10;
+    free(sample_key);
+    free_value(&val);
+
+    /* Expect "TO" */
+    if (!*cur || !((*cur)->type == TOK_IDENT &&
+        port_strcasecmp((*cur)->value, "to") == 0)) {
+        fprintf(stderr, "prg: expected TO in INDEX ON\n");
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+    *cur = (*cur)->next; /* skip "TO" */
+
+    /* Get filename */
+    char filename[1024];
+    if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_STRING)) {
+        strncpy(filename, (*cur)->value, sizeof(filename) - 1);
+        filename[sizeof(filename) - 1] = '\0';
+        *cur = (*cur)->next;
+    } else {
+        fprintf(stderr, "prg: expected filename in INDEX ON\n");
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    /* Ensure .ndx extension */
+    char path[1024];
+    if (strchr(filename, '.') == NULL) {
+        snprintf(path, sizeof(path), "%s.ndx", filename);
+    } else {
+        strncpy(path, filename, sizeof(path) - 1);
+        path[sizeof(path) - 1] = '\0';
+    }
+
+    skip_to_eol(cur);
+
+    /* Collect keys for all records */
+    DATABASEDBF *db = wa_db();
+    if (!db) {
+        fprintf(stderr, "prg: no database open\n");
+        return EXEC_OK;
+    }
+
+    int total = reccount(db);
+    _IdxEntry *entries = calloc(total, sizeof(_IdxEntry));
+    if (!entries) {
+        fprintf(stderr, "prg: out of memory for index\n");
+        return EXEC_OK;
+    }
+
+    int entry_count = 0;
+
+    /* Save current position */
+    int saved_current = wa_recno();
+
+    for (int rec = 1; rec <= total; rec++) {
+        gotos(wa_db_ptr(), rec);
+
+        /* Re-evaluate the expression for this record */
+        Token *expr_cur = expr_start;
+        ExprValue v = parse_expr(&expr_cur);
+        char *key = val_to_string(&v);
+
+        if (key && *key) {
+            /* Update key_len if we see a longer key */
+            int klen = (int)strlen(key);
+            if (klen > key_len) key_len = klen;
+
+            entries[entry_count].key = key;
+            entries[entry_count].recno = rec;
+            entry_count++;
+        } else {
+            free(key);
+        }
+        free_value(&v);
+    }
+
+    /* Restore position */
+    gotos(wa_db_ptr(), saved_current);
+
+    if (entry_count == 0) {
+        free(entries);
+        fprintf(stderr, "prg: no keys generated for index\n");
+        return EXEC_OK;
+    }
+
+    /* Sort entries */
+    qsort(entries, entry_count, sizeof(_IdxEntry), _cmp_idx);
+
+    /* Build arrays for the generic library function */
+    char **keys = malloc(entry_count * sizeof(char *));
+    int *recnos = malloc(entry_count * sizeof(int));
+    if (!keys || !recnos) {
+        for (int i = 0; i < entry_count; i++) free(entries[i].key);
+        free(entries);
+        free(keys); free(recnos);
+        return EXEC_OK;
+    }
+
+    for (int i = 0; i < entry_count; i++) {
+        keys[i] = entries[i].key;
+        recnos[i] = entries[i].recno;
+    }
+    free(entries);
+
+    /* Create the index file */
+    int rc = create_index_ndx_generic(keys, recnos, entry_count,
+                                       key_len, "INDEX", path);
+
+    free(keys);
+    free(recnos);
+
+    if (rc == 0) {
+        /* Auto-open the newly created index */
+        wa_set_index(path);
+    } else {
+        fprintf(stderr, "prg: failed to create index '%s'\n", path);
+    }
+
     return EXEC_OK;
 }

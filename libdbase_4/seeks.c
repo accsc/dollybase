@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include "libdbase.h"
 
@@ -99,6 +100,206 @@ FOUND seek_index(NTX *ind, char *criteria, int type)
 				
 		}
 return fin;
+}
+
+/* ------------------------------------------------------------------ */
+/* B-tree descent for NDX (dBase III+ native index, 512-byte pages)    */
+/* Returns FOUND with recno set to the matching DBF record, or 0.      */
+/* ------------------------------------------------------------------ */
+
+FOUND seek_ndx_btree(NDX *ind, char *criteria)
+{
+    FILE *fp = NULL;
+    char *page = NULL;
+    char *keybuf = NULL;
+    FOUND fin;
+    int page_size = 512;
+    int page_num = ind->root_page;
+
+    memset(&fin, 0, sizeof(fin));
+    if (!ind || !criteria || ind->root_page == 0)
+        return fin;
+
+    fp = fopen(ind->fname, "rb");
+    if (!fp) return fin;
+
+    page = malloc(page_size);
+    keybuf = malloc(ind->key_len + 1);
+    if (!page || !keybuf) {
+        free(page); free(keybuf); fclose(fp); return fin;
+    }
+
+    /* Walk down the B-tree from root to leaf */
+    while (1) {
+        fseek(fp, page_num * page_size, SEEK_SET);
+        fread(page, 1, page_size, fp);
+
+        /* First 4 bytes: number of entries in this node */
+        int nentry = page[0] + (page[1] << 8) + (page[2] << 16) + (page[3] << 24);
+        if (nentry <= 0) break;
+
+        int found_entry = -1;
+
+        for (int i = 0; i < nentry; i++) {
+            int base = 4 + i * (ind->key_len + 8);
+
+            /* Bytes 0-3: leaf node pointer (child page for interior) */
+            int leafnode = page[base] + (page[base+1] << 8) +
+                           (page[base+2] << 16) + (page[base+3] << 24);
+            /* Bytes 4-7: DBF record number */
+            int dbfrec = page[base+4] + (page[base+5] << 8) +
+                         (page[base+6] << 16) + (page[base+7] << 24);
+            /* Bytes 8+: key value */
+            int klen = ind->key_len;
+            if (base + 8 + klen > page_size) klen = page_size - base - 8;
+            memcpy(keybuf, page + base + 8, klen);
+            keybuf[klen] = '\0';
+
+            /* Strip trailing spaces from key for comparison */
+            while (klen > 0 && keybuf[klen - 1] == ' ')
+                keybuf[--klen] = '\0';
+
+            int cmp = strncasecmp(keybuf, criteria, (size_t)klen > strlen(criteria) ? strlen(criteria) : klen);
+
+            if (cmp == 0) {
+                /* Exact match */
+                if (dbfrec != 0) {
+                    /* Leaf entry — we found the record */
+                    fin.recno = dbfrec;
+                    fin.page = page_num;
+                    fin.pos = i;
+                    fin.interior = 0;
+                    free(page); free(keybuf); fclose(fp);
+                    return fin;
+                } else if (leafnode != 0) {
+                    /* Interior entry — descend to child */
+                    page_num = leafnode;
+                    found_entry = i;
+                    break;
+                }
+            } else if (cmp < 0) {
+                /* Key < criteria — criteria could be in this child's range */
+                /* Remember this entry as a candidate and keep looking */
+                if (leafnode != 0 && dbfrec == 0) {
+                    page_num = leafnode;
+                    found_entry = i;
+                    /* Don't break — keep looking for a better match */
+                } else if (dbfrec != 0) {
+                    /* Leaf entry with key < criteria — keep scanning */
+                    found_entry = -2; /* marker: still scanning leaf */
+                }
+            } else {
+                /* Key > criteria — stop; last candidate is our target */
+                break;
+            }
+        }
+
+        /* If we scanned all entries and criteria > last key,
+           use the last child (found_entry should already be set) */
+        if (found_entry == -2) {
+            /* We were scanning a leaf and criteria exceeded all keys */
+            found_entry = -1;
+        }
+
+        if (found_entry == -1) {
+            /* No match found in this branch */
+            break;
+        }
+    }
+
+    free(page); free(keybuf); fclose(fp);
+    return fin;
+}
+
+/* ------------------------------------------------------------------ */
+/* B-tree descent for NTX (Clipper index, 1024-byte pages)             */
+/* ------------------------------------------------------------------ */
+
+FOUND seek_ntx_btree(NTX *ind, char *criteria)
+{
+    FILE *fp = NULL;
+    char *page = NULL;
+    char *keybuf = NULL;
+    FOUND fin;
+    int page_size = 1024;
+    int page_num = ind->root_page;
+
+    memset(&fin, 0, sizeof(fin));
+    if (!ind || !criteria || ind->root_page == 0)
+        return fin;
+
+    fp = fopen(ind->fname, "rb");
+    if (!fp) return fin;
+
+    page = malloc(page_size);
+    keybuf = malloc(ind->key_len + 1);
+    if (!page || !keybuf) {
+        free(page); free(keybuf); fclose(fp); return fin;
+    }
+
+    while (1) {
+        fseek(fp, page_num * page_size, SEEK_SET);
+        fread(page, 1, page_size, fp);
+
+        /* First 2 bytes: number of keys in this node */
+        int nkeys = page[0] + (page[1] << 8);
+        if (nkeys <= 0) break;
+
+        int found_entry = -1;
+
+        for (int i = 0; i < nkeys; i++) {
+            /* NTX layout: 8-byte child pointer + 4-byte recno + key_len bytes */
+            int base = 2 + (2 * nkeys) + i * (ind->key_len + 8);
+            if (base + ind->key_len + 8 > page_size) break;
+
+            /* Bytes 0-3: child page pointer */
+            int child_pg = page[base] + (page[base+1] << 8) +
+                           (page[base+2] << 16) + (page[base+3] << 24);
+            /* Bytes 4-7: DBF record number */
+            int dbfrec = page[base+4] + (page[base+5] << 8) +
+                         (page[base+6] << 16) + (page[base+7] << 24);
+            /* Bytes 8+: key value */
+            int klen = ind->key_len;
+            if (base + 8 + klen > page_size) klen = page_size - base - 8;
+            memcpy(keybuf, page + base + 8, klen);
+            keybuf[klen] = '\0';
+
+            /* Strip trailing spaces from key for comparison */
+            while (klen > 0 && keybuf[klen - 1] == ' ')
+                keybuf[--klen] = '\0';
+
+            int cmp = strncasecmp(keybuf, criteria, (size_t)klen > strlen(criteria) ? strlen(criteria) : klen);
+
+            if (cmp == 0) {
+                if (dbfrec != 0) {
+                    fin.recno = dbfrec;
+                    fin.page = page_num;
+                    fin.pos = i;
+                    fin.interior = 0;
+                    free(page); free(keybuf); fclose(fp);
+                    return fin;
+                } else if (child_pg != 0) {
+                    page_num = child_pg;
+                    found_entry = i;
+                    break;
+                }
+            } else if (cmp < 0) {
+                if (child_pg != 0 && dbfrec == 0) {
+                    page_num = child_pg;
+                    found_entry = i;
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        if (found_entry == -1)
+            break;
+    }
+
+    free(page); free(keybuf); fclose(fp);
+    return fin;
 }
 /*DATABASEDBF skip_index(DATABASEDBF asp)
 {

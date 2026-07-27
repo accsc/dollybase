@@ -3,6 +3,7 @@
  *
  * Walks a token list and dispatches statements: IF/ELSE/ENDIF, DO WHILE/ENDDO,
  * FOR/NEXT, assignment, ?, RETURN, SET, SKIP, USE, GO TOP/BOTTOM.
+ * Supports PROCEDURE definitions, DO <name> calls, and RETURN with call stack.
  */
 
 #include <stdio.h>
@@ -32,6 +33,121 @@ static int port_strcasecmp(const char *a, const char *b)
 }
 
 /* ------------------------------------------------------------------ */
+/* Procedure registry                                                  */
+/* ------------------------------------------------------------------ */
+
+static Procedure procedures[MAX_PROCEDURES];
+static int proc_count = 0;
+
+void proc_registry_init(void)
+{
+    proc_count = 0;
+    memset(procedures, 0, sizeof(procedures));
+}
+
+void proc_registry_add(const char *name, Token *start)
+{
+    if (proc_count >= MAX_PROCEDURES) return;
+    strncpy(procedures[proc_count].name, name, sizeof(procedures[proc_count].name) - 1);
+    procedures[proc_count].name[sizeof(procedures[proc_count].name) - 1] = '\0';
+    procedures[proc_count].start = start;
+    proc_count++;
+}
+
+const Procedure *proc_registry_lookup(const char *name)
+{
+    for (int i = 0; i < proc_count; i++) {
+        if (port_strcasecmp(procedures[i].name, name) == 0)
+            return &procedures[i];
+    }
+    return NULL;
+}
+
+/* Scan token list for PROCEDURE <name> definitions and register them. */
+void proc_scan(Token *tokens)
+{
+    proc_registry_init();
+    Token *cur = tokens;
+    while (cur) {
+        if (cur->type == TOK_KEYWORD && cur->keyword_id == KW_PROCEDURE) {
+            /* Next token should be the procedure name (IDENT or keyword used as name) */
+            Token *next = cur->next;
+            if (next && next->type == TOK_IDENT) {
+                /* Body starts after the name */
+                Token *body = next->next;
+                proc_registry_add(next->value, body);
+            }
+        }
+        cur = cur->next;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Call stack for DO / RETURN                                          */
+/* ------------------------------------------------------------------ */
+
+#define MAX_CALL_DEPTH 32
+#define MAX_PARAMS 32
+
+typedef struct {
+    Token *return_token;  /* Where to resume after RETURN               */
+    Token *tokens;        /* The full token list (for cleanup on file DO) */
+    int is_file;          /* 1 if loaded from external file (free tokens on return) */
+    /* Parameters passed via DO ... WITH */
+    ExprValue params[MAX_PARAMS];
+    int param_count;
+} CallFrame;
+
+static CallFrame call_stack[MAX_CALL_DEPTH];
+static int call_depth = 0;
+static Token *last_return_target = NULL;  /* Set by exec_return when popping call stack */
+
+/* Temporary argument buffer for DO ... WITH — transferred to call frame on push */
+static ExprValue temp_call_args[MAX_PARAMS];
+static int temp_call_arg_count = 0;
+
+static void call_push(Token *return_token, Token *tokens, int is_file)
+{
+    if (call_depth >= MAX_CALL_DEPTH) {
+        fprintf(stderr, "prg: call stack overflow\n");
+        return;
+    }
+    CallFrame *frame = &call_stack[call_depth];
+    frame->return_token = return_token;
+    frame->tokens = tokens;
+    frame->is_file = is_file;
+    frame->param_count = 0;
+    memset(frame->params, 0, sizeof(frame->params));
+    call_depth++;
+}
+
+static int call_pop(Token **out_return)
+{
+    if (call_depth <= 0) {
+        *out_return = NULL;
+        return 0;
+    }
+    call_depth--;
+    CallFrame *frame = &call_stack[call_depth];
+    *out_return = frame->return_token;
+    /* Free any parameters that weren't consumed by PARAMETERS */
+    for (int i = 0; i < frame->param_count; i++) {
+        free_value(&frame->params[i]);
+    }
+    if (frame->is_file && frame->tokens) {
+        free_tokens(frame->tokens);
+    }
+    return 1;
+}
+
+/* Accessor for the current (top-of-stack) call frame */
+static CallFrame *call_current(void)
+{
+    if (call_depth <= 0) return NULL;
+    return &call_stack[call_depth - 1];
+}
+
+/* ------------------------------------------------------------------ */
 /* Forward declarations                                                */
 /* ------------------------------------------------------------------ */
 
@@ -43,6 +159,9 @@ static void skip_to_eol(Token **cur);
 static ExecStatus exec_if(Token **cur);
 static ExecStatus exec_do_while(Token **cur);
 static ExecStatus exec_for(Token **cur);
+static ExecStatus exec_do_call(Token **cur);
+static ExecStatus exec_return(Token **cur);
+static ExecStatus exec_parameters(Token **cur);
 static ExecStatus exec_set(Token **cur);
 static ExecStatus exec_skip(Token **cur);
 static ExecStatus exec_use(Token **cur);
@@ -56,6 +175,7 @@ static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2);
 static void skip_block_nested(Token **cur, KeywordId end_kw, KeywordId else_kw);
 static ExecStatus exec_do_body(Token **cur);
 static ExecStatus exec_for_body(Token **cur);
+static ExecStatus execute_tokens_from(Token **cur);
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -63,7 +183,7 @@ static ExecStatus exec_for_body(Token **cur);
 
 static ExprValue parse_expr(Token **cur)
 {
-    ParseError err;
+    ParseError err = PARSE_OK;
     return parse_expression(cur, &err);
 }
 
@@ -97,10 +217,20 @@ ExecStatus execute_tokens(Token *tokens)
         if (cur->type == TOK_EOF)
             break;
 
-        fprintf(stderr, "DEBUG exec: dispatch at type=%d \"%s\"\n", cur->type, cur->value);
+        /* Skip PROCEDURE definitions at the top level — they are registered
+           by proc_scan() and only entered via DO <name>. */
+        if (cur->type == TOK_KEYWORD && cur->keyword_id == KW_PROCEDURE) {
+            /* Advance past this PROCEDURE keyword first, then skip to next PROCEDURE or EOF */
+            cur = cur->next;
+            while (cur && cur->type != TOK_EOF) {
+                if (cur->type == TOK_KEYWORD && cur->keyword_id == KW_PROCEDURE)
+                    break;
+                cur = cur->next;
+            }
+            continue;
+        }
+
         ExecStatus st = exec_statement(&cur);
-        fprintf(stderr, "DEBUG exec: after statement, cur type=%d \"%s\"\n",
-                cur ? cur->type : -1, cur ? cur->value : "");
         if (st == EXEC_RETURN || st == EXEC_CANCEL)
             return st;
 
@@ -108,8 +238,63 @@ ExecStatus execute_tokens(Token *tokens)
            next iteration starts at the next real token. Block constructs
            (IF, DO WHILE, FOR) already consume their own boundaries. */
         if (cur && cur->type == TOK_EOL) {
-            fprintf(stderr, "DEBUG exec: skipping EOL\n");
             cur = cur->next;
+        }
+    }
+    return EXEC_OK;
+}
+
+/* Execute tokens starting from a cursor position (used after RETURN resumes). */
+static ExecStatus execute_tokens_from(Token **cur)
+{
+    while (*cur) {
+        if ((*cur)->type == TOK_EOL) {
+            *cur = (*cur)->next;
+            continue;
+        }
+        if ((*cur)->type == TOK_EOF)
+            break;
+
+        if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_PROCEDURE) {
+            *cur = (*cur)->next;
+            while (*cur && (*cur)->type != TOK_EOF) {
+                if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_PROCEDURE)
+                    break;
+                *cur = (*cur)->next;
+            }
+            continue;
+        }
+
+        ExecStatus st = exec_statement(cur);
+        if (st == EXEC_RETURN || st == EXEC_CANCEL)
+            return st;
+
+        if (*cur && (*cur)->type == TOK_EOL) {
+            *cur = (*cur)->next;
+        }
+    }
+    return EXEC_OK;
+}
+
+/* Execute a token range (used for procedure bodies). */
+static ExecStatus execute_token_range(Token **cur, Token *end_sentinel)
+{
+    while (cur && *cur) {
+        if (*cur == end_sentinel)
+            break;
+        if ((*cur)->type == TOK_EOF)
+            break;
+        if ((*cur)->type == TOK_EOL) {
+            *cur = (*cur)->next;
+            continue;
+        }
+
+        ExecStatus st = exec_statement(cur);
+        if (st == EXEC_RETURN || st == EXEC_CANCEL)
+            return st;
+
+        if (*cur && (*cur)->type == TOK_EOL) {
+            *cur = (*cur)->next;
         }
     }
     return EXEC_OK;
@@ -131,8 +316,11 @@ static ExecStatus exec_statement(Token **cur)
             case KW_IF:       return exec_if(cur);
             case KW_DO:       return exec_do_while(cur);
             case KW_FOR:      return exec_for(cur);
-            case KW_RETURN:   (*cur) = (*cur)->next; return EXEC_RETURN;
-            case KW_CANCEL:   (*cur) = (*cur)->next; return EXEC_CANCEL;
+            case KW_RETURN:     return exec_return(cur);
+            case KW_PARAMETERS: return exec_parameters(cur);
+            case KW_CANCEL:     (*cur) = (*cur)->next; return EXEC_CANCEL;
+            case KW_EXIT:     (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_EXIT;
+            case KW_LOOP:     (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_LOOP;
             case KW_SET:      return exec_set(cur);
             case KW_SKIP:     return exec_skip(cur);
             case KW_USE:      return exec_use(cur);
@@ -162,6 +350,273 @@ static ExecStatus exec_statement(Token **cur)
 }
 
 /* ------------------------------------------------------------------ */
+/* RETURN                                                              */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_return(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "RETURN" */
+
+    /* If there's a call stack, pop and resume */
+    Token *return_token = NULL;
+    if (call_pop(&return_token)) {
+        /* Set a global return point so exec_do_call can resume */
+        last_return_target = return_token;
+        return EXEC_RETURN;  /* Bubble up to exec_do_call */
+    }
+
+    /* No call stack — return from the main program */
+    return EXEC_RETURN;
+}
+
+/* ------------------------------------------------------------------ */
+/* PARAMETERS p1, p2, ...                                              */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_parameters(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "PARAMETERS" */
+
+    CallFrame *frame = call_current();
+    int param_idx = 0;
+
+    while (*cur && !is_eol_or_eof(*cur)) {
+        /* Expect an identifier for the parameter name */
+        if ((*cur)->type == TOK_IDENT) {
+            char pname[256];
+            strncpy(pname, (*cur)->value, sizeof(pname) - 1);
+            pname[sizeof(pname) - 1] = '\0';
+            *cur = (*cur)->next;
+
+            /* Assign the corresponding argument from the call frame */
+            if (frame && param_idx < frame->param_count) {
+                /* Mark this param as consumed so call_pop doesn't free it */
+                ExprValue val = frame->params[param_idx];
+                frame->params[param_idx] = val_null();
+                vars_set(pname, &val);
+            }
+            /* If no frame or out of range, just create a NULL variable */
+            else {
+                ExprValue null_val = val_null();
+                vars_set(pname, &null_val);
+            }
+            param_idx++;
+        } else {
+            /* Unexpected token — skip */
+            *cur = (*cur)->next;
+        }
+
+        /* Skip comma separator */
+        if (*cur && (*cur)->type == TOK_COMMA) {
+            *cur = (*cur)->next;
+        }
+    }
+
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* DO <name> [WITH <args>]                                             */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_do_call(Token **cur)
+{
+    /* cur points at the target name (IDENT or string literal) */
+    if (!*cur) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    char target[256];
+    if ((*cur)->type == TOK_IDENT) {
+        strncpy(target, (*cur)->value, sizeof(target) - 1);
+        target[sizeof(target) - 1] = '\0';
+        *cur = (*cur)->next;
+    } else if ((*cur)->type == TOK_STRING) {
+        strncpy(target, (*cur)->value, sizeof(target) - 1);
+        target[sizeof(target) - 1] = '\0';
+        *cur = (*cur)->next;
+    } else {
+        /* Unexpected token — skip line */
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    /* Evaluate optional WITH <args> and store for the callee */
+    temp_call_arg_count = 0;
+    if (*cur && match_keyword(cur, KW_WITH)) {
+        while (*cur && temp_call_arg_count < MAX_PARAMS) {
+            if (is_eol_or_eof(*cur)) break;
+            temp_call_args[temp_call_arg_count++] = parse_expr(cur);
+            if (*cur && (*cur)->type == TOK_COMMA) {
+                *cur = (*cur)->next;
+            } else {
+                break;
+            }
+        }
+    }
+
+    /* Skip EOL after DO statement */
+    if (*cur && (*cur)->type == TOK_EOL) {
+        *cur = (*cur)->next;
+    }
+
+    /* Save return point (the token after the DO statement) */
+    Token *return_point = *cur;
+
+    /* 1. Look up in internal procedure registry */
+    const Procedure *proc = proc_registry_lookup(target);
+    if (proc && proc->start) {
+        /* Push call frame (no file cleanup needed) */
+        call_push(return_point, NULL, 0);
+        /* Transfer WITH arguments to the call frame */
+        {
+            CallFrame *frame = call_current();
+            int n = temp_call_arg_count < MAX_PARAMS ? temp_call_arg_count : MAX_PARAMS;
+            frame->param_count = n;
+            for (int i = 0; i < n; i++) {
+                frame->params[i] = temp_call_args[i];
+            }
+        }
+
+        /* Find the end of this procedure (next PROCEDURE or EOF) */
+        Token *end_sentinel = NULL;
+        Token *scan = proc->start;
+        while (scan) {
+            if (scan->type == TOK_KEYWORD && scan->keyword_id == KW_PROCEDURE) {
+                end_sentinel = scan;
+                break;
+            }
+            if (scan->type == TOK_EOF)
+                break;
+            scan = scan->next;
+        }
+
+        Token *body_cur = proc->start;
+        ExecStatus st = execute_token_range(&body_cur, end_sentinel);
+        if (st == EXEC_RETURN) {
+            /* RETURN popped the call stack. Resume at last_return_target. */
+            *cur = last_return_target;
+            return EXEC_OK;
+        }
+        return st;
+    }
+
+    /* 2. Try to load as external .prg file */
+    char path[512];
+    snprintf(path, sizeof(path), "%s.prg", target);
+
+    char *source = NULL;
+    FILE *fp = fopen(path, "r");
+    if (fp) {
+        fseek(fp, 0, SEEK_END);
+        long sz = ftell(fp);
+        fseek(fp, 0, SEEK_SET);
+        if (sz > 0) {
+            source = malloc((size_t)sz + 1);
+            if (source) {
+                fread(source, 1, (size_t)sz, fp);
+                source[sz] = '\0';
+            }
+        }
+        fclose(fp);
+    }
+
+    if (!source || !*source) {
+        free(source);
+        fprintf(stderr, "prg: cannot open '%s'\n", path);
+        /* Resume at return point */
+        *cur = return_point;
+        return EXEC_OK;
+    }
+
+    Token *file_tokens = tokenize(source);
+    free(source);
+
+    if (!file_tokens) {
+        fprintf(stderr, "prg: failed to tokenize '%s'\n", path);
+        *cur = return_point;
+        return EXEC_OK;
+    }
+
+    /* Scan for procedures in the loaded file too */
+    proc_scan(file_tokens);
+
+    /* Push call frame with file cleanup */
+    call_push(return_point, file_tokens, 1);
+    /* Transfer WITH arguments to the call frame */
+    {
+        CallFrame *frame = call_current();
+        int n = temp_call_arg_count < MAX_PARAMS ? temp_call_arg_count : MAX_PARAMS;
+        frame->param_count = n;
+        for (int i = 0; i < n; i++) {
+            frame->params[i] = temp_call_args[i];
+        }
+    }
+
+    Token *file_cur = file_tokens;
+    ExecStatus st = execute_tokens(file_cur);
+    if (st == EXEC_RETURN) {
+        /* RETURN popped the call stack (and freed file tokens). Resume. */
+        *cur = last_return_target;
+        return EXEC_OK;
+    }
+    return st;
+}
+
+/* ------------------------------------------------------------------ */
+/* execute_file — public API for loading and running a .prg file       */
+/* ------------------------------------------------------------------ */
+
+ExecStatus execute_file(const char *path)
+{
+    char full_path[512];
+    if (strchr(path, '.') == NULL) {
+        snprintf(full_path, sizeof(full_path), "%s.prg", path);
+    } else {
+        strncpy(full_path, path, sizeof(full_path) - 1);
+        full_path[sizeof(full_path) - 1] = '\0';
+    }
+
+    FILE *fp = fopen(full_path, "r");
+    if (!fp) {
+        fprintf(stderr, "prg: cannot open '%s': %m\n", full_path);
+        return EXEC_CANCEL;
+    }
+
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    if (sz < 0) {
+        fclose(fp);
+        return EXEC_CANCEL;
+    }
+
+    char *source = malloc((size_t)sz + 1);
+    if (!source) {
+        fclose(fp);
+        return EXEC_CANCEL;
+    }
+
+    size_t n = fread(source, 1, (size_t)sz, fp);
+    source[n] = '\0';
+    fclose(fp);
+
+    Token *tokens = tokenize(source);
+    free(source);
+
+    if (!tokens)
+        return EXEC_CANCEL;
+
+    proc_scan(tokens);
+
+    ExecStatus st = execute_tokens(tokens);
+    free_tokens(tokens);
+    return st;
+}
+
+/* ------------------------------------------------------------------ */
 /* IF / ELSE / ENDIF                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -173,8 +628,23 @@ static ExecStatus exec_if(Token **cur)
     int truthy = val_to_logical(&cond);
     free_value(&cond);
 
+    /* Skip EOL after condition so the body starts at the next real token */
+    if (*cur && (*cur)->type == TOK_EOL)
+        *cur = (*cur)->next;
+
     if (truthy) {
-        return exec_block_until(cur, KW_ENDIF, KW_ELSE);
+        ExecStatus st = exec_block_until(cur, KW_ENDIF, KW_ELSE);
+        if (st != EXEC_OK)
+            return st;
+        /* If we stopped at ELSE, skip the else-body to ENDIF */
+        if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ELSE) {
+            *cur = (*cur)->next; /* skip ELSE keyword itself */
+            skip_block_nested(cur, KW_ENDIF, 0);
+            if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDIF) {
+                *cur = (*cur)->next; /* consume ENDIF */
+            }
+        }
+        return EXEC_OK;
     } else {
         /* Skip the true branch to ELSE or ENDIF */
         skip_block_nested(cur, KW_ENDIF, KW_ELSE);
@@ -193,20 +663,28 @@ static ExecStatus exec_if(Token **cur)
 }
 
 /* Execute statements until we hit one of the sentinel keywords.
-   If kw2 is 0, only kw1 is a sentinel. */
+   If kw2 is 0, only kw1 is a sentinel.
+   Nested IF/DO/FOR are fully consumed by exec_statement, so we only
+   need to check for our own sentinels at the top level. */
 static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2)
 {
-    while (*cur && !is_eol_or_eof(*cur)) {
-        /* Check for sentinel */
+    while (*cur && (*cur)->type != TOK_EOF) {
+        /* Skip EOL between lines of the block */
+        if ((*cur)->type == TOK_EOL) {
+            *cur = (*cur)->next;
+            continue;
+        }
+
+        /* Check for our sentinel keywords at this level.
+           Nested IF/DO/FOR blocks are consumed entirely by exec_statement,
+           so any ENDIF/ELSE/ENDDO/NEXT we see here belongs to us. */
         if ((*cur)->type == TOK_KEYWORD) {
             if ((*cur)->keyword_id == kw1 || (kw2 && (*cur)->keyword_id == kw2))
                 break;
-            /* Nested IF/DO WHILE/FOR — we still execute them normally,
-               they consume their own blocks */
         }
 
         ExecStatus st = exec_statement(cur);
-        if (st == EXEC_RETURN || st == EXEC_CANCEL)
+        if (st == EXEC_RETURN || st == EXEC_CANCEL || st == EXEC_EXIT || st == EXEC_LOOP)
             return st;
     }
 
@@ -222,7 +700,7 @@ static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2)
 static void skip_block_nested(Token **cur, KeywordId end_kw, KeywordId else_kw)
 {
     int depth = 1;
-    while (*cur && !is_eol_or_eof(*cur)) {
+    while (*cur && (*cur)->type != TOK_EOF) {
         if ((*cur)->type == TOK_KEYWORD) {
             if ((*cur)->keyword_id == KW_IF || (*cur)->keyword_id == KW_DO ||
                 (*cur)->keyword_id == KW_FOR) {
@@ -235,10 +713,7 @@ static void skip_block_nested(Token **cur, KeywordId end_kw, KeywordId else_kw)
         }
         *cur = (*cur)->next;
     }
-    /* Consume the sentinel */
-    if (*cur && !is_eol_or_eof(*cur)) {
-        *cur = (*cur)->next;
-    }
+    /* Do NOT consume the sentinel — caller decides what to do with it */
 }
 
 /* ------------------------------------------------------------------ */
@@ -247,30 +722,55 @@ static void skip_block_nested(Token **cur, KeywordId end_kw, KeywordId else_kw)
 
 static ExecStatus exec_do_while(Token **cur)
 {
-    /* DO WHILE <condition> */
+    /* DO WHILE <condition>  or  DO <name> [WITH ...] */
     *cur = (*cur)->next; /* skip "DO" */
     if (*cur && match_keyword(cur, KW_WHILE)) {
-        /* ok */
+        /* DO WHILE — fall through to existing loop logic below */
     } else {
-        /* bare "DO <program>" — not implemented yet, skip line */
-        skip_to_eol(cur);
-        return EXEC_OK;
+        /* bare "DO <name>" — delegate to exec_do_call which back-patches cur */
+        return exec_do_call(cur);
     }
+
+    /* Save condition token range for re-evaluation */
+    Token *cond_start = *cur;
 
     ExprValue cond = parse_expr(cur);
     int truthy = val_to_logical(&cond);
     free_value(&cond);
 
+    /* Skip EOL after condition so the body starts at the next real token */
+    if (*cur && (*cur)->type == TOK_EOL)
+        *cur = (*cur)->next;
+
+    /* Save body start for re-execution on each iteration */
+    Token *body_start = *cur;
+
     while (truthy) {
+        /* Reset cursor to body start for this iteration */
+        *cur = body_start;
+
         /* Execute body until ENDDO, EXIT, or LOOP */
         ExecStatus st = exec_do_body(cur);
 
-        if (st == EXEC_EXIT || st == EXEC_RETURN || st == EXEC_CANCEL) {
+        if (st == EXEC_EXIT) {
+            /* Skip rest of body to ENDDO */
+            while (*cur && (*cur)->type != TOK_EOF &&
+                   !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO)) {
+                if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
+                *cur = (*cur)->next;
+            }
+            if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO) {
+                *cur = (*cur)->next; /* consume ENDDO */
+            }
+            return EXEC_OK;
+        }
+        if (st == EXEC_RETURN || st == EXEC_CANCEL) {
             return st;
         }
 
-        /* Re-evaluate condition */
-        cond = parse_expr(cur);
+        /* Re-evaluate condition from saved position */
+        Token *cond_cur = cond_start;
+        cond = parse_expr(&cond_cur);
         truthy = val_to_logical(&cond);
         free_value(&cond);
     }
@@ -283,23 +783,31 @@ static ExecStatus exec_do_while(Token **cur)
     return EXEC_OK;
 }
 
-/* Execute the body of a DO WHILE loop. Stops at ENDDO, EXIT, or LOOP. */
+/* Execute the body of a DO WHILE loop. Stops at ENDDO, EXIT, or LOOP.
+   Does NOT consume ENDDO — caller is responsible. */
 static ExecStatus exec_do_body(Token **cur)
 {
-    while (*cur && !is_eol_or_eof(*cur)) {
+    while (*cur && (*cur)->type != TOK_EOF) {
+        /* Skip EOL between lines of the body */
+        if ((*cur)->type == TOK_EOL) {
+            *cur = (*cur)->next;
+            continue;
+        }
+
         if ((*cur)->type == TOK_KEYWORD) {
             KeywordId kw = (*cur)->keyword_id;
 
             if (kw == KW_ENDDO) {
-                *cur = (*cur)->next; /* consume ENDDO */
+                /* Don't consume ENDDO — let caller handle it */
                 return EXEC_OK;
             }
             if (kw == KW_EXIT) {
                 *cur = (*cur)->next; /* consume EXIT */
                 skip_to_eol(cur);
                 /* Leave cur at or past ENDDO — caller handles it */
-                while (*cur && !is_eol_or_eof(*cur) &&
+                while (*cur && (*cur)->type != TOK_EOF &&
                        !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO)) {
+                    if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
                     *cur = (*cur)->next;
                 }
                 if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO) {
@@ -367,6 +875,13 @@ static ExecStatus exec_for(Token **cur)
         free_value(&sv);
     }
 
+    /* Skip EOL after FOR header so the body starts at the next real token */
+    if (*cur && (*cur)->type == TOK_EOL)
+        *cur = (*cur)->next;
+
+    /* Save body start for re-execution on each iteration */
+    Token *for_body_start = *cur;
+
     /* Initialize loop variable */
     { ExprValue v = val_real(start_d); vars_set(varname, &v); }
 
@@ -382,8 +897,23 @@ static ExecStatus exec_for(Token **cur)
 
         { ExprValue v = val_real(cur_val); vars_set(varname, &v); }
 
+        /* Reset cursor to body start for this iteration */
+        *cur = for_body_start;
+
         ExecStatus st = exec_for_body(cur);
-        if (st == EXEC_EXIT || st == EXEC_RETURN || st == EXEC_CANCEL) {
+        if (st == EXEC_EXIT) {
+            /* Skip rest of body to NEXT */
+            while (*cur && (*cur)->type != TOK_EOF &&
+                   !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT)) {
+                if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
+                *cur = (*cur)->next;
+            }
+            if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT) {
+                *cur = (*cur)->next; /* consume NEXT */
+            }
+            return EXEC_OK;
+        }
+        if (st == EXEC_RETURN || st == EXEC_CANCEL) {
             return st;
         }
 
@@ -400,7 +930,13 @@ static ExecStatus exec_for(Token **cur)
 
 static ExecStatus exec_for_body(Token **cur)
 {
-    while (*cur && !is_eol_or_eof(*cur)) {
+    while (*cur && (*cur)->type != TOK_EOF) {
+        /* Skip EOL between lines of the body */
+        if ((*cur)->type == TOK_EOL) {
+            *cur = (*cur)->next;
+            continue;
+        }
+
         if ((*cur)->type == TOK_KEYWORD) {
             KeywordId kw = (*cur)->keyword_id;
             if (kw == KW_NEXT) {
@@ -410,8 +946,9 @@ static ExecStatus exec_for_body(Token **cur)
             if (kw == KW_EXIT) {
                 *cur = (*cur)->next;
                 skip_to_eol(cur);
-                while (*cur && !is_eol_or_eof(*cur) &&
+                while (*cur && (*cur)->type != TOK_EOF &&
                        !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT)) {
+                    if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
                     *cur = (*cur)->next;
                 }
                 if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT) {

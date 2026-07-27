@@ -64,6 +64,7 @@ typedef enum {
     KW_QUIT,
     KW_RETURN,
     KW_WHILE,
+    KW_WITH,
 
     /* Database commands */
     KW_ALIAS,
@@ -103,6 +104,7 @@ typedef enum {
     KW_DIMENSION,
     KW_FUNCTION,
     KW_PARAMETERS,
+    KW_PROCEDURE,
     KW_LOCAL,
     KW_PRIVATE,
     KW_PUBLIC,

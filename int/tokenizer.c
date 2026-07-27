@@ -92,6 +92,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"OR",           KW_OR},
     {"PACK",         KW_PACK},
     {"PARAMETERS",   KW_PARAMETERS},
+    {"PROCEDURE",    KW_PROCEDURE},
     {"PRINTER",      KW_PRINTER},
     {"PRIVATE",      KW_PRIVATE},
     {"PUBLIC",       KW_PUBLIC},
@@ -101,6 +102,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"RECN",         KW_RECN},
     {"RECNO",        KW_RECNO},
     {"REPLACE",      KW_REPLACE},
+    {"RETURN",       KW_RETURN},
     {"RIGHT",        KW_RIGHT_FUNC},
     {"ROUND",        KW_ROUND},
     {"SAFETY",       KW_SAFETY},
@@ -121,6 +123,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"USE",          KW_USE},
     {"VAL",          KW_VAL},
     {"WHILE",        KW_WHILE},
+    {"WITH",         KW_WITH},
     {"YEAR",         KW_YEAR},
     {"ZAP",          KW_ZAP},
 };
@@ -414,6 +417,7 @@ static void scan_operator(const char **pos, Token **out, int line)
     case '/':
     case '%':
     case '^':
+    case '?':
         type = TOK_OP_ARITH;
         break;
     case '-':

@@ -58,7 +58,8 @@ char *wa_dbf_name(void);  // ALIAS(). Caller frees.
 int  wa_set_index(const char *index_file);  // SET INDEX TO <file>. Returns 0 on success.
 void wa_set_index_clear(void);               // SET INDEX TO (clear).
 int  wa_seek(const char *criteria);          // SEEK <expr>. Returns 0 if found.
-int  wa_found(void);                         // FOUND() — 1 if last SEEK succeeded.
+int  wa_found(void);                         // FOUND() — 1 if last SEEK/LOCATE succeeded.
+void wa_set_found(int val);                  // Set FOUND() flag manually.
 void wa_index_skip(int n);                   // SKIP using index order.
 
 #endif /* _WORKAREA_H */

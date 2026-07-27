@@ -59,7 +59,7 @@ typedef enum {
     KW_IF,
     KW_LABEL,
     KW_LOOP,
-    KW_NEXT,
+    KW_ENDFOR,
     KW_OR,
     KW_QUIT,
     KW_RETURN,

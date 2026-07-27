@@ -329,10 +329,13 @@ char *wa_get_field(int idx)
 {
     DATABASEDBF *db = wa_db();
     if (!db) return NULL;
-    char buf[257];
+    char *buf = malloc(1024);
+    if (!buf) return NULL;
     char *p = buf;
     get_field(db, idx, &p);
-    return strdup(buf);
+    char *result = strdup(buf);
+    free(buf);
+    return result;
 }
 
 int wa_replace(const char *fieldname, const char *value)
@@ -488,6 +491,11 @@ int wa_found(void)
 {
     IndexState *st = &idx_states[selected];
     return st->last_found;
+}
+
+void wa_set_found(int val)
+{
+    idx_states[selected].last_found = val;
 }
 
 void wa_index_skip(int n)

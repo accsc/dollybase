@@ -2,7 +2,7 @@
  * executor.c — dBase III Plus statement executor
  *
  * Walks a token list and dispatches statements: IF/ELSE/ENDIF, DO WHILE/ENDDO,
- * FOR/NEXT, assignment, ?, RETURN, SET, SKIP, USE, GO TOP/BOTTOM.
+ * FOR/ENDFOR, assignment, ?, RETURN, SET, SKIP, USE, GO TOP/BOTTOM.
  * Supports PROCEDURE definitions, DO <name> calls, and RETURN with call stack.
  */
 
@@ -179,6 +179,7 @@ static ExecStatus exec_append(Token **cur);
 static ExecStatus exec_display(Token **cur);
 static ExecStatus exec_seek(Token **cur);
 static ExecStatus exec_index(Token **cur);
+static ExecStatus exec_locate(Token **cur);
 
 /* Block / loop helpers */
 static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2);
@@ -347,6 +348,7 @@ static ExecStatus exec_statement(Token **cur)
             case KW_DISPLAY:  return exec_display(cur);
             case KW_SEEK:     return exec_seek(cur);
             case KW_INDEX:    return exec_index(cur);
+            case KW_LOCATE:   return exec_locate(cur);
             default:
                 /* Unknown keyword — treat as expression or skip */
                 break;
@@ -696,7 +698,7 @@ static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2)
 
         /* Check for our sentinel keywords at this level.
            Nested IF/DO/FOR blocks are consumed entirely by exec_statement,
-           so any ENDIF/ELSE/ENDDO/NEXT we see here belongs to us. */
+           so any ENDIF/ELSE/ENDDO/ENDFOR we see here belongs to us. */
         if ((*cur)->type == TOK_KEYWORD) {
             if ((*cur)->keyword_id == kw1 || (kw2 && (*cur)->keyword_id == kw2))
                 break;
@@ -848,7 +850,7 @@ static ExecStatus exec_do_body(Token **cur)
 }
 
 /* ------------------------------------------------------------------ */
-/* FOR / NEXT                                                          */
+/* FOR / ENDFOR                                                        */
 /* ------------------------------------------------------------------ */
 
 static ExecStatus exec_for(Token **cur)
@@ -921,14 +923,14 @@ static ExecStatus exec_for(Token **cur)
 
         ExecStatus st = exec_for_body(cur);
         if (st == EXEC_EXIT) {
-            /* Skip rest of body to NEXT */
+            /* Skip rest of body to ENDFOR */
             while (*cur && (*cur)->type != TOK_EOF &&
-                   !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT)) {
+                   !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDFOR)) {
                 if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
                 *cur = (*cur)->next;
             }
-            if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT) {
-                *cur = (*cur)->next; /* consume NEXT */
+            if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDFOR) {
+                *cur = (*cur)->next; /* consume ENDFOR */
             }
             return EXEC_OK;
         }
@@ -939,8 +941,8 @@ static ExecStatus exec_for(Token **cur)
         cur_val += step;
     }
 
-    /* Consume NEXT */
-    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT) {
+    /* Consume ENDFOR */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDFOR) {
         *cur = (*cur)->next;
     }
 
@@ -958,7 +960,7 @@ static ExecStatus exec_for_body(Token **cur)
 
         if ((*cur)->type == TOK_KEYWORD) {
             KeywordId kw = (*cur)->keyword_id;
-            if (kw == KW_NEXT) {
+            if (kw == KW_ENDFOR) {
                 *cur = (*cur)->next;
                 return EXEC_OK;
             }
@@ -966,11 +968,11 @@ static ExecStatus exec_for_body(Token **cur)
                 *cur = (*cur)->next;
                 skip_to_eol(cur);
                 while (*cur && (*cur)->type != TOK_EOF &&
-                       !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT)) {
+                       !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDFOR)) {
                     if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
                     *cur = (*cur)->next;
                 }
-                if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT) {
+                if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDFOR) {
                     *cur = (*cur)->next;
                 }
                 return EXEC_EXIT;
@@ -1512,5 +1514,107 @@ static ExecStatus exec_index(Token **cur)
         fprintf(stderr, "prg: failed to create index '%s'\n", path);
     }
 
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* LOCATE FOR <expr> [WHILE <expr>]                                    */
+/*                                                                      */
+/* Scans from record 1 to the end looking for the first record where    */
+/* <for_expr> evaluates to .T.  If a WHILE clause is present, scanning  */
+/* stops as soon as <while_expr> evaluates to .F.                       */
+/* Sets FOUND() to .T. on success, .F. otherwise.                      */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_locate(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "LOCATE" */
+
+    /* Expect "FOR" */
+    if (!*cur || !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_FOR)) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+    (*cur) = (*cur)->next; /* skip "FOR" */
+
+    /* Save the FOR expression token range (start to just before WHILE or EOL/EOF) */
+    Token *for_start = *cur;
+    Token *for_end = NULL;
+
+    /* Scan ahead to find WHERE the FOR expression ends */
+    {
+        Token *scan = *cur;
+        int paren_depth = 0;
+        while (scan) {
+            if (scan->type == TOK_LPAREN) paren_depth++;
+            else if (scan->type == TOK_RPAREN) { if (paren_depth > 0) paren_depth--; }
+            else if (scan->type == TOK_EOF || scan->type == TOK_EOL) {
+                for_end = scan;
+                break;
+            }
+            else if (paren_depth == 0 &&
+                     scan->type == TOK_KEYWORD && scan->keyword_id == KW_WHILE) {
+                for_end = scan;
+                break;
+            }
+            scan = scan->next;
+        }
+        if (!for_end) for_end = scan; /* EOF or nothing found */
+    }
+
+    /* Check for optional WHILE clause */
+    Token *while_start = NULL;
+    if (for_end && for_end->type == TOK_KEYWORD && for_end->keyword_id == KW_WHILE) {
+        while_start = for_end->next;
+    }
+
+    /* Advance cur past the entire LOCATE line */
+    skip_to_eol(cur);
+
+    /* --- Execute the locate scan --- */
+    DATABASEDBF *db = wa_db();
+    if (!db) {
+        wa_set_found(0);
+        return EXEC_OK;
+    }
+
+    int total = reccount(db);
+    int found = 0;
+
+    wa_goto_top();
+
+    int last_valid_rec = 0;
+
+    for (int rec = 1; rec <= total; rec++) {
+        gotos(wa_db_ptr(), rec);
+
+        /* Evaluate WHILE guard first (if present) — stop if false */
+        if (while_start) {
+            Token *wcur = while_start;
+            ExprValue wval = parse_expr(&wcur);
+            int wresult = val_to_logical(&wval);
+            free_value(&wval);
+            if (!wresult) {
+                /* WHILE condition failed — restore to last valid record */
+                if (last_valid_rec > 0)
+                    gotos(wa_db_ptr(), last_valid_rec);
+                break;
+            }
+            last_valid_rec = rec;
+        }
+
+        /* Evaluate FOR condition */
+        Token *fcur = for_start;
+        ExprValue fval = parse_expr(&fcur);
+        int fresult = val_to_logical(&fval);
+        free_value(&fval);
+
+        if (fresult) {
+            found = 1;
+            break; /* Stay on this record */
+        }
+    }
+
+    wa_set_found(found);
     return EXEC_OK;
 }

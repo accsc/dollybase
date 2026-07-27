@@ -109,13 +109,14 @@ char *dbt_name = (char *) malloc(1025);
 FILE *a;
 int i,pos;
 char *presion2;
-	
+	int buf_size = (asp && number >= 1 && number <= 128 && asp->fields.tipos[number] == 'M') ? 1024 : 256;
+
 if( dbt_name == NULL)
 {
 return;
 }
 
-if( (presion2 = (char *) malloc(257)) ==NULL)
+if( (presion2 = (char *) malloc(buf_size + 1)) ==NULL)
 {
 	free(dbt_name);
 	fprintf(stderr,"Error. Sin memoria.\n");
@@ -147,7 +148,6 @@ presion2[asp->fields.longitudes[number]] = 0;
 
 if( asp->fields.tipos[number] == 'M')
 {
-	printf("%i = %s\n",atoi(presion2),presion2);
 	get_dbt(asp->name,dbt_name);
 	if( asp->tipo == 3)
 	    get_memo_field(dbt_name,atoi(presion2),&presion2,1023);
@@ -156,12 +156,17 @@ if( asp->fields.tipos[number] == 'M')
 }
 
 fclose(a);
-for(i = asp->fields.longitudes[number]-1; i>=1; --i)
+/* Trim trailing spaces — but only for non-memo fields.
+   Memo fields have content from the DBT that exceeds the DBF field width. */
+if( asp->fields.tipos[number] != 'M')
 {
-	if( presion2[i-1] == 32)
-		presion2[i-1] = '\0';
-	else
-		break;
+	for(i = asp->fields.longitudes[number]-1; i>=1; --i)
+	{
+		if( presion2[i-1] == 32)
+			presion2[i-1] = '\0';
+		else
+			break;
+	}
 }
 strcpy(*presion, presion2);
 free(presion2);

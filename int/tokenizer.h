@@ -67,6 +67,7 @@ typedef enum {
     KW_WITH,
 
     /* Database commands */
+    KW_ALL,
     KW_ALIAS,
     KW_APPEND,
     KW_BROWSE,
@@ -130,10 +131,12 @@ typedef enum {
     /* Expression functions */
     KW_ABS,
     KW_ALLTRIM,
+    KW_ASC,
     KW_AT_FUNC,           /* AT()                                   */
     KW_ATC,
     KW_BETWEEN,
     KW_BOF,
+    KW_CHR,
     KW_CTOD,
     KW_DATE,              /* DATE() function                        */
     KW_DAY,
@@ -148,6 +151,7 @@ typedef enum {
     KW_INT_FUNC,          /* INT()                                  */
     KW_LEFT_FUNC,         /* LEFT()                                 */
     KW_LEN,
+    KW_LTRIM,
     KW_LOWER,
     KW_MAX,
     KW_MIN,
@@ -156,11 +160,15 @@ typedef enum {
     KW_RECNO,
     KW_RIGHT_FUNC,        /* RIGHT()                                */
     KW_ROUND,
+    KW_RTRIM,
+    KW_SIGN,
     KW_SQRT,
+    KW_SPACE,
     KW_SUBSTR,
     KW_SUM,
     KW_TYPE,
     KW_UPPER,
+    KW_TRIM,
     KW_VAL,
     KW_YEAR,
 

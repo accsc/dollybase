@@ -1208,26 +1208,196 @@ static ExecStatus exec_go(Token **cur)
 }
 
 /* ------------------------------------------------------------------ */
-/* DELETE                                                              */
+/* Scope modifier helper                                               */
+/*                                                                      */
+/* Parses optional ALL / FOR <expr> / WHILE <expr> from *cur.           */
+/* Sets *scope_all, *for_start, *while_start.                           */
+/* Advances *cur past the scope tokens (but not past EOL).              */
+/*                                                                      */
+/* Usage pattern in callers:                                            */
+/*   if (scope_all)  -> operate on every record                         */
+/*   if (for_start)  -> re-evaluate expr per record, skip if false      */
+/*   if (while_start)-> re-evaluate expr per record, stop if false      */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    int    scope_all;
+    Token *for_start;
+    Token *while_start;
+} ScopeInfo;
+
+static void parse_scope(Token **cur, ScopeInfo *si)
+{
+    si->scope_all = 0;
+    si->for_start = NULL;
+    si->while_start = NULL;
+
+    if (!*cur || is_eol_or_eof(*cur))
+        return;
+
+    /* Check for ALL */
+    if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ALL) {
+        si->scope_all = 1;
+        *cur = (*cur)->next;
+        if (!*cur || is_eol_or_eof(*cur))
+            return;
+    }
+
+    /* Check for FOR <expr> */
+    if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_FOR) {
+        *cur = (*cur)->next; /* skip "FOR" */
+        si->for_start = *cur;
+
+        /* Advance past the FOR expression to find WHILE or EOL */
+        int paren_depth = 0;
+        while (*cur && !is_eol_or_eof(*cur)) {
+            if ((*cur)->type == TOK_LPAREN) paren_depth++;
+            else if ((*cur)->type == TOK_RPAREN) { if (paren_depth > 0) paren_depth--; }
+            else if (paren_depth == 0 &&
+                     (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_WHILE)
+                break;
+            *cur = (*cur)->next;
+        }
+    }
+
+    /* Check for WHILE <expr> */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_WHILE) {
+        *cur = (*cur)->next; /* skip "WHILE" */
+        si->while_start = *cur;
+        /* Don't advance past WHILE expr — caller does skip_to_eol */
+    }
+}
+
+/* Evaluate scope conditions for the current record. Returns 1 if the
+   record should be processed, 0 if it should be skipped.
+   For WHILE: returns 0 also means "stop scanning entirely".
+   Use *stop_scan (output param) to distinguish skip vs stop. */
+static int eval_scope(const ScopeInfo *si, int *stop_scan)
+{
+    *stop_scan = 0;
+
+    /* Evaluate WHILE guard first */
+    if (si->while_start) {
+        Token *wcur = si->while_start;
+        ExprValue wval = parse_expr(&wcur);
+        int wresult = val_to_logical(&wval);
+        free_value(&wval);
+        if (!wresult) {
+            *stop_scan = 1;
+            return 0;
+        }
+    }
+
+    /* Evaluate FOR condition */
+    if (si->for_start) {
+        Token *fcur = si->for_start;
+        ExprValue fval = parse_expr(&fcur);
+        int fresult = val_to_logical(&fval);
+        free_value(&fval);
+        if (!fresult)
+            return 0;
+    }
+
+    return 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* DELETE [ALL] [FOR expr] [WHILE expr]                                */
 /* ------------------------------------------------------------------ */
 
 static ExecStatus exec_delete(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "DELETE" */
-    wa_delete();
+
+    ScopeInfo si;
+    parse_scope(cur, &si);
     skip_to_eol(cur);
+
+    DATABASEDBF *db = wa_db();
+    if (!db)
+        return EXEC_OK;
+
+    int total = reccount(db);
+    int saved_rec = wa_recno();
+
+    if (si.scope_all) {
+        /* DELETE ALL — mark every record */
+        for (int rec = 1; rec <= total; rec++) {
+            gotos(wa_db_ptr(), rec);
+            wa_delete();
+        }
+    } else if (si.for_start || si.while_start) {
+        /* Scoped delete */
+        int last_valid_rec = 0;
+        for (int rec = 1; rec <= total; rec++) {
+            gotos(wa_db_ptr(), rec);
+            int stop = 0;
+            if (!eval_scope(&si, &stop)) {
+                if (stop) {
+                    if (last_valid_rec > 0)
+                        gotos(wa_db_ptr(), last_valid_rec);
+                    break;
+                }
+                continue;
+            }
+            last_valid_rec = rec;
+            wa_delete();
+        }
+    } else {
+        /* No scope — delete current record only */
+        wa_delete();
+    }
+
+    /* Restore cursor position */
+    gotos(wa_db_ptr(), saved_rec);
     return EXEC_OK;
 }
 
 /* ------------------------------------------------------------------ */
-/* RECALL                                                              */
+/* RECALL [ALL] [FOR expr] [WHILE expr]                                */
 /* ------------------------------------------------------------------ */
 
 static ExecStatus exec_recall(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "RECALL" */
-    wa_recall();
+
+    ScopeInfo si;
+    parse_scope(cur, &si);
     skip_to_eol(cur);
+
+    DATABASEDBF *db = wa_db();
+    if (!db)
+        return EXEC_OK;
+
+    int total = reccount(db);
+    int saved_rec = wa_recno();
+
+    if (si.scope_all) {
+        for (int rec = 1; rec <= total; rec++) {
+            gotos(wa_db_ptr(), rec);
+            wa_recall();
+        }
+    } else if (si.for_start || si.while_start) {
+        int last_valid_rec = 0;
+        for (int rec = 1; rec <= total; rec++) {
+            gotos(wa_db_ptr(), rec);
+            int stop = 0;
+            if (!eval_scope(&si, &stop)) {
+                if (stop) {
+                    if (last_valid_rec > 0)
+                        gotos(wa_db_ptr(), last_valid_rec);
+                    break;
+                }
+                continue;
+            }
+            last_valid_rec = rec;
+            wa_recall();
+        }
+    } else {
+        wa_recall();
+    }
+
+    gotos(wa_db_ptr(), saved_rec);
     return EXEC_OK;
 }
 
@@ -1256,12 +1426,20 @@ static ExecStatus exec_zap(Token **cur)
 }
 
 /* ------------------------------------------------------------------ */
-/* REPLACE <field> WITH <expr>                                         */
+/* REPLACE [ALL] <field> WITH <expr> [FOR cond] [WHILE cond]           */
 /* ------------------------------------------------------------------ */
 
 static ExecStatus exec_replace(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "REPLACE" */
+
+    /* Check for ALL before field name */
+    int scope_all = 0;
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ALL) {
+        scope_all = 1;
+        *cur = (*cur)->next;
+    }
+
     if (!*cur || (*cur)->type != TOK_IDENT) {
         skip_to_eol(cur);
         return EXEC_OK;
@@ -1278,13 +1456,96 @@ static ExecStatus exec_replace(Token **cur)
         *cur = (*cur)->next;
     }
 
-    ExprValue val = parse_expr(cur);
-    char *s = val_to_string(&val);
-    wa_replace(fieldname, s);
-    free(s);
-    free_value(&val);
+    /* Save the replacement expression token range */
+    Token *repl_start = *cur;
+
+    /* Parse the expression once to find its end */
+    Token *scan = *cur;
+    int paren_depth = 0;
+    while (scan && !is_eol_or_eof(scan)) {
+        if (scan->type == TOK_LPAREN) paren_depth++;
+        else if (scan->type == TOK_RPAREN) { if (paren_depth > 0) paren_depth--; }
+        else if (paren_depth == 0 &&
+                 scan->type == TOK_KEYWORD &&
+                 (scan->keyword_id == KW_FOR || scan->keyword_id == KW_WHILE))
+            break;
+        scan = scan->next;
+    }
+
+    /* Parse FOR/WHILE scope after the replacement expression */
+    ScopeInfo si;
+    si.scope_all = scope_all;
+    si.for_start = NULL;
+    si.while_start = NULL;
+
+    if (scan && scan->type == TOK_KEYWORD && scan->keyword_id == KW_FOR) {
+        si.for_start = scan->next;
+        scan = scan->next;
+        paren_depth = 0;
+        while (scan && !is_eol_or_eof(scan)) {
+            if (scan->type == TOK_LPAREN) paren_depth++;
+            else if (scan->type == TOK_RPAREN) { if (paren_depth > 0) paren_depth--; }
+            else if (paren_depth == 0 &&
+                     scan->type == TOK_KEYWORD && scan->keyword_id == KW_WHILE)
+                break;
+            scan = scan->next;
+        }
+    }
+
+    if (scan && scan->type == TOK_KEYWORD && scan->keyword_id == KW_WHILE) {
+        si.while_start = scan->next;
+    }
 
     skip_to_eol(cur);
+
+    DATABASEDBF *db = wa_db();
+    if (!db)
+        return EXEC_OK;
+
+    int total = reccount(db);
+    int saved_rec = wa_recno();
+
+    if (si.scope_all) {
+        for (int rec = 1; rec <= total; rec++) {
+            gotos(wa_db_ptr(), rec);
+            Token *rcur = repl_start;
+            ExprValue val = parse_expr(&rcur);
+            char *s = val_to_string(&val);
+            wa_replace(fieldname, s);
+            free(s);
+            free_value(&val);
+        }
+    } else if (si.for_start || si.while_start) {
+        int last_valid_rec = 0;
+        for (int rec = 1; rec <= total; rec++) {
+            gotos(wa_db_ptr(), rec);
+            int stop = 0;
+            if (!eval_scope(&si, &stop)) {
+                if (stop) {
+                    if (last_valid_rec > 0)
+                        gotos(wa_db_ptr(), last_valid_rec);
+                    break;
+                }
+                continue;
+            }
+            last_valid_rec = rec;
+            Token *rcur = repl_start;
+            ExprValue val = parse_expr(&rcur);
+            char *s = val_to_string(&val);
+            wa_replace(fieldname, s);
+            free(s);
+            free_value(&val);
+        }
+    } else {
+        /* No scope — replace current record only */
+        ExprValue val = parse_expr(&repl_start);
+        char *s = val_to_string(&val);
+        wa_replace(fieldname, s);
+        free(s);
+        free_value(&val);
+    }
+
+    gotos(wa_db_ptr(), saved_rec);
     return EXEC_OK;
 }
 

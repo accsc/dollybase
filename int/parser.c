@@ -666,9 +666,11 @@ static const FuncEntry func_table[] = {
     { KW_ABS,       builtin_abs },
     { KW_ALLTRIM,   builtin_alltrim },
     { KW_ALIAS,     builtin_alias },
+    { KW_ASC,       builtin_asc },
     { KW_AT_FUNC,   builtin_at_func },
     { KW_BETWEEN,   builtin_between },
     { KW_BOF,       builtin_bof },
+    { KW_CHR,       builtin_chr },
     { KW_CTOD,      builtin_ctod },
     { KW_DATE,      builtin_date_func },
     { KW_DAY,       builtin_day },
@@ -682,6 +684,7 @@ static const FuncEntry func_table[] = {
     { KW_LEFT_FUNC, builtin_left_func },
     { KW_LEN,       builtin_len },
     { KW_LOWER,     builtin_lower },
+    { KW_LTRIM,     builtin_ltrim },
     { KW_MAX,       builtin_max },
     { KW_MIN,       builtin_min },
     { KW_MONTH,     builtin_month },
@@ -689,10 +692,14 @@ static const FuncEntry func_table[] = {
     { KW_RECNO,     builtin_recno },
     { KW_RIGHT_FUNC,builtin_right_func },
     { KW_ROUND,     builtin_round },
+    { KW_RTRIM,     builtin_rtrim },
+    { KW_SIGN,      builtin_sign },
     { KW_SQRT,      builtin_sqrt },
+    { KW_SPACE,     builtin_space },
     { KW_SUBSTR,    builtin_substr },
     { KW_TYPE,      builtin_type },
     { KW_UPPER,     builtin_upper },
+    { KW_TRIM,      builtin_trim },
     { KW_VAL,       builtin_val },
     { KW_YEAR,      builtin_year },
     /* Additional functions */
@@ -860,10 +867,14 @@ static ExprValue builtin_trim(Token **cur, ParseError *err) {
     if (*err != PARSE_OK) return arg;
     char *s = val_to_string(&arg);
     free_value(&arg);
+    char *orig = s;
+    /* Trim left */
+    while (*s == ' ') s++;
+    /* Trim right */
     size_t len = strlen(s);
     while (len > 0 && s[len - 1] == ' ') s[--len] = '\0';
     ExprValue res = val_string(s);
-    free(s);
+    free(orig);
     return res;
 }
 
@@ -880,8 +891,15 @@ static ExprValue builtin_ltrim(Token **cur, ParseError *err) {
 }
 
 static ExprValue builtin_rtrim(Token **cur, ParseError *err) {
-    (void)err; /* alias for trim */
-    return builtin_trim(cur, err);
+    ExprValue arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) return arg;
+    char *s = val_to_string(&arg);
+    free_value(&arg);
+    size_t len = strlen(s);
+    while (len > 0 && s[len - 1] == ' ') s[--len] = '\0';
+    ExprValue res = val_string(s);
+    free(s);
+    return res;
 }
 
 static ExprValue builtin_substr(Token **cur, ParseError *err) {

@@ -4,6 +4,7 @@ Funciones: delete,recall,recall_all,delete_all,zap y pack.
 */
 
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include "libdbase.h"
 

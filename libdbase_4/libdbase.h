@@ -149,6 +149,7 @@ int recall_all(DATABASEDBF *asp);
 int zap(DATABASEDBF *asp);
 int is_deleted(DATABASEDBF *asp);
 int pack(DATABASEDBF *asp);
+int pack_db_with_dbt_file(DATABASEDBF *asp, char *_na);
 
 /* Acciones con registros o campos */
 long long average_campo(DATABASEDBF *asp, char *campo, int nexts);

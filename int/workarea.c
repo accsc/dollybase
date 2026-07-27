@@ -265,6 +265,14 @@ int wa_pack(void)
 {
     DATABASEDBF *db = wa_db();
     if (!db) return -1;
+
+    /* If database has a DBT file (tipo 3 = dBase III+ DBT, tipo 4 = dBase IV DBT),
+     * use the DBT-aware pack function */
+    if (db->tipo == 3 || db->tipo == 4) {
+        char dbt_name[1024];
+        get_dbt(db->name, dbt_name);
+        return pack_db_with_dbt_file(db, dbt_name);
+    }
     return pack(db);
 }
 

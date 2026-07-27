@@ -32,8 +32,19 @@ int create_database(char *_name,int day, int month, int year,
 {
 FILE *new_db;
 int contador, rec_len, cont, cont2;
-char chr; 
+char chr;
 char *header;
+int has_memo = 0;
+
+/* Scan fields for memo type before writing header */
+for( contador = 1; contador <= db_struc->camposn; ++contador)
+{
+	if( db_struc->fields.tipos[contador] == 'M')
+	{
+		has_memo = 1;
+		break;
+	}
+}
 
 if ( (header = (char *) malloc (34)) == NULL )
 {
@@ -60,8 +71,8 @@ if ( (header = (char *) malloc (34)) == NULL )
 		return -2;
 	}
 /***************************** Head stuff *********************************/
-	
-	header[0] = 0x03; /* Tipe of DB, 0x03 for dbase III or dollyBase*/
+
+	header[0] = has_memo ? 0x83 : 0x03; /* 0x83 = dBase III with DBT memo */
 	header[1] = year;  /* Ex: 0 for 2000 or 7 for 2007 */
 	header[2] = month; /* 1-12 */
 	header[3] = day; /* 1-31 */
@@ -138,8 +149,7 @@ if ( (header = (char *) malloc (34)) == NULL )
 
 		fputc(db_struc->fields.tipos[contador],new_db);
 		if( db_struc->fields.tipos[contador] == 'M')
-		{	
-		/*header[0] = 0x83;*/
+		{
 			db_struc->fields.longitudes[contador] = 10;
 		}
 		fputc(0x00,new_db);
@@ -159,6 +169,23 @@ if ( (header = (char *) malloc (34)) == NULL )
 	fflush(new_db);
 /*************************** End of Fields stuff **************************/
 	fclose(new_db);
+
+	/* Auto-create companion .dbt file if database has memo fields */
+	if (has_memo) {
+		char dbt_name[1024];
+		char *dot = strrchr(_name, '.');
+		if (dot != NULL) {
+			/* Replace extension: copy base name, append ".dbt" */
+			int base_len = (int)(dot - _name);
+			memcpy(dbt_name, _name, base_len);
+			memcpy(dbt_name + base_len, ".dbt", 4);
+			dbt_name[base_len + 4] = '\0';
+		} else {
+			snprintf(dbt_name, sizeof(dbt_name), "%s.dbt", _name);
+		}
+		create_dbt_file(dbt_name);
+	}
+
 	return 0;
 }
 /******************** End of create database function *********************/

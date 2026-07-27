@@ -19,9 +19,10 @@ if( campon <=128)
 	{
 		aquello[ui] = asp->fields.names[ui][campon];
 	}
-strcpy(*name,aquello);
+	aquello[12] = '\0'; /* Null-terminate the 12-char field name */
+	strcpy(*name,aquello);
 }else{
-free(aquello);	
+free(aquello);
 return -1;
 }
 free(aquello);
@@ -289,9 +290,11 @@ int add_to_dbt(char *_na,char *content, int max)
 	int _next[4];
 	char *dbt_block = (char *) malloc( 512 );
 
-	struct stat dbt_info;  
-	int next_block, i,i2; /* The next block */
-	
+	struct stat dbt_info;
+	int next_block, i, i2; /* The next block */
+	int offset = 0; /* Byte offset into content */
+	int blocks_used = 0;
+
 	if( access(_na,F_OK | R_OK | W_OK) != 0)
 	{
 #ifdef DEBUG
@@ -301,7 +304,7 @@ int add_to_dbt(char *_na,char *content, int max)
 		free(dbt_block);
 		return -1;
 	}
-	
+
 	if( (dbt_file = fopen(_na,"r+b")) == NULL)
 	{
 #ifdef DEBUG
@@ -318,59 +321,46 @@ int add_to_dbt(char *_na,char *content, int max)
 	{
 		fprintf(stderr,"Byte 16 should be 0x03\n");
 		fflush(stderr);
-	
+
 	}
 #endif
 	next_block = dbt_block[0] + (dbt_block[1]*256) + (dbt_block[2]*65536) + (dbt_block[3]*16777216);
-	next_block = next_block * 512; /* Convert to a position in the file */
 #ifdef DEBUG
 	fprintf(stderr,"Next Position blocks: %i - %i - %i - %i\n",dbt_block[0],dbt_block[1],dbt_block[2],dbt_block[3]);
-	fprintf(stderr,"Next Position in file: %i\n",next_block);
 	fflush(stderr);
 #endif
-	fseek(dbt_file,next_block,SEEK_SET);
 
-/* Perfect, only one block */
-	if( max <= 510 )
-	{
-		fwrite(content,1,max,dbt_file);
-		
-		for( i = max; i <= 509; ++i)
-			fputc(0x00,dbt_file);
-		
-		fputc(0x1A,dbt_file); /* Two for dBase III */
-		fputc(0x1A,dbt_file);
-	}else{ 
-	i = max;
-	while( i != 0 )
-	{
-		max = max-512;
-		i = max/512;
+	/* Write content across one or more 512-byte blocks */
+	while (offset < max) {
+		int bytes_in_block = max - offset;
+		if (bytes_in_block > 510)
+			bytes_in_block = 510;
 
-	fwrite(content,1,512,dbt_file);
-	for( i2 = 0; i2<511; ++i2)
-	content++;
-		
+		fseek(dbt_file, next_block * 512, SEEK_SET);
+		fwrite(content + offset, 1, bytes_in_block, dbt_file);
+
+		/* Pad remainder with 0x00, then two 0x1A terminators */
+		for (i = bytes_in_block; i < 510; ++i)
+			fputc(0x00, dbt_file);
+		fputc(0x1A, dbt_file);
+		fputc(0x1A, dbt_file);
+
+		offset += bytes_in_block;
+		next_block++;
+		blocks_used++;
 	}
-	i = max % 512;
-	fwrite(content,1,i,dbt_file);
-	for( i2 = 0; i2< (512-i-2); ++i2)
-	fputc(0x1A,dbt_file);
-	fputc(0x1A,dbt_file);
 
-	}
 	fflush(dbt_file);
 
-	/* Untested update next rec */
-	fseek(dbt_file,0L,SEEK_SET);
-	next_block = (next_block+512)/512;
-	_next[3] = next_block/16777216;
-	_next[2] = (next_block - (_next[3]*16777216))/65536;
-	_next[1] = (next_block - (_next[3]*16777216) - (_next[2]*65536))/256;
-	_next[0] = (next_block - (_next[3]*16777216) - (_next[2]*65536) - (_next[1]*256));
-	fwrite(_next,1,4,dbt_file);
+	/* Update next-free-block pointer in header */
+	fseek(dbt_file, 0L, SEEK_SET);
+	_next[3] = next_block / 16777216;
+	_next[2] = (next_block - (_next[3] * 16777216)) / 65536;
+	_next[1] = (next_block - (_next[3] * 16777216) - (_next[2] * 65536)) / 256;
+	_next[0] = next_block - (_next[3] * 16777216) - (_next[2] * 65536) - (_next[1] * 256);
+	fwrite(_next, 1, 4, dbt_file);
 	fflush(dbt_file);
-	
+
 	fclose(dbt_file);
 	free(dbt_block);
 	return 0;
@@ -455,11 +445,12 @@ int get_memo_field(char *_na, int block, char **result, int max)
 	it = 0;
 	do{
 	i = fgetc(dbt_file);
+	if (i == EOF) break;
 	result2[it] = i;
 	++it;
-	if( i == 0x00 || i == 0xA1 || it+1 == max)
+	if( i == 0x00 || i == 0xA1 || it >= max )
 		break;
-	}while( i != 0xA1 || i != 0x00 || it < (max-1));
+	}while( it < max );
 	result2[it] = '\0';
 	strcpy(*result,result2);
 	free(result2);

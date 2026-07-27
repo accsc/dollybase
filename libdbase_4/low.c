@@ -256,13 +256,26 @@ strcpy(*name,asp->name);
 
 int get_dbt(char *na, char *out)
 {
-	strcpy(out,na);
-	out[strlen(out)-1] = 't';
-	out[strlen(out)] = '\0';
+    char *dot = strrchr(na, '.');
+    if (dot != NULL) {
+        /* Has an extension — replace it in-place (case-preserving) */
+        strcpy(out, na);
+        /* Find the last char of the extension */
+        char *end = out + strlen(out) - 1;
+        /* Preserve case: if original was uppercase, keep it */
+        if (*end >= 'A' && *end <= 'Z')
+            *end = 'T';
+        else
+            *end = 't';
+    } else {
+        /* No extension — append ".dbt" */
+        snprintf(out, 1024, "%s.dbt", na);
+    }
 #ifdef DEBUG
 	fprintf(stderr,"Using DBT file: %s",out);
 	fflush(stderr);
 #endif
+    return 0;
 }
 
 int null_test( char *a)

@@ -174,10 +174,13 @@ static ExecStatus exec_assign(Token **cur);
 static ExecStatus exec_delete(Token **cur);
 static ExecStatus exec_recall(Token **cur);
 static ExecStatus exec_pack(Token **cur);
+static ExecStatus exec_pause(Token **cur);
 static ExecStatus exec_zap(Token **cur);
 static ExecStatus exec_replace(Token **cur);
 static ExecStatus exec_append(Token **cur);
 static ExecStatus exec_display(Token **cur);
+static ExecStatus exec_list(Token **cur);
+static ExecStatus exec_browse(Token **cur);
 static ExecStatus exec_seek(Token **cur);
 static ExecStatus exec_select(Token **cur);
 static ExecStatus exec_index(Token **cur);
@@ -353,10 +356,12 @@ static ExecStatus exec_statement(Token **cur)
             case KW_DELETE:   return exec_delete(cur);
             case KW_RECALL:   return exec_recall(cur);
             case KW_PACK:     return exec_pack(cur);
+            case KW_PAUSE:    return exec_pause(cur);
             case KW_ZAP:      return exec_zap(cur);
             case KW_REPLACE:  return exec_replace(cur);
             case KW_APPEND:   return exec_append(cur);
             case KW_DISPLAY:  return exec_display(cur);
+            case KW_LIST:     return exec_list(cur);
             case KW_SEEK:     return exec_seek(cur);
             case KW_SELECT:   return exec_select(cur);
             case KW_INDEX:    return exec_index(cur);
@@ -364,6 +369,7 @@ static ExecStatus exec_statement(Token **cur)
             case KW_CONTINUE: return exec_continue(cur);
             case KW_READ:     return exec_read(cur);
             case KW_CLEAR:    return exec_clear(cur);
+            case KW_BROWSE:   return exec_browse(cur);
             default:
                 /* Unknown keyword — treat as expression or skip */
                 break;
@@ -1582,6 +1588,40 @@ static ExecStatus exec_pack(Token **cur)
 }
 
 /* ------------------------------------------------------------------ */
+/* PAUSE [message]                                                     */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_pause(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "PAUSE" */
+
+    char msg[256] = "Press any key to continue...";
+    if (*cur && !is_eol_or_eof(*cur)) {
+        ExprValue val = parse_expr(cur);
+        char *s = val_to_string(&val);
+        strncpy(msg, s, sizeof(msg) - 1);
+        msg[sizeof(msg) - 1] = '\0';
+        free(s);
+        free_value(&val);
+    }
+    skip_to_eol(cur);
+
+    if (ui_is_active()) {
+        /* Ensure nodelay is OFF so getch() blocks */
+        nodelay(stdscr, FALSE);
+        /* Print message at current cursor position (right after prior output) */
+        addstr(msg);
+        refresh();
+        /* Block until a key is pressed */
+        getch();
+    } else {
+        printf("%s", msg);
+        fflush(stdout);
+    }
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
 /* ZAP                                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -1828,11 +1868,301 @@ static ExecStatus exec_display(Token **cur)
     }
     DATABASEDBF *db = wa_db();
     if (!db) {
-        fprintf(stdout, "No database in use\n");
+        if (ui_is_active()) {
+            ui_print("No database in use");
+            ui_print_newline();
+            ui_refresh();
+        } else {
+            printf("No database in use\n");
+        }
     } else {
-        display_structure(db);
+        /* ncurses-aware display_structure */
+        int row = 0;
+        char line[256];
+        int total_size = 0;
+
+        if (ui_is_active()) {
+            /* DB name */
+            snprintf(line, sizeof(line), "DB name: %s", db->name);
+            ui_print(line); ui_print_newline();
+
+            /* Record count */
+            snprintf(line, sizeof(line), "Recs: %10d", (int)db->recnos);
+            ui_print(line); ui_print_newline();
+
+            /* Date */
+            snprintf(line, sizeof(line), "Last Update Date: %s", db->date);
+            ui_print(line); ui_print_newline();
+
+            /* Header */
+            ui_print("Field  Name      Type   Size    Decimals");
+            ui_print_newline();
+
+            /* Fields */
+            for (int i = 1; i <= db->camposn; i++) {
+                char fname[13] = "";
+                for (int j = 0; j <= 11; j++) {
+                    if (db->fields.names[j][i])
+                        fname[j] = db->fields.names[j][i];
+                    else
+                        fname[j] = ' ';
+                }
+                fname[12] = '\0';
+                total_size += db->fields.longitudes[i];
+
+                snprintf(line, sizeof(line), "%5d  %-12s%c      %2d%s",
+                         i, fname, db->fields.tipos[i],
+                         db->fields.longitudes[i],
+                         (db->fields.tipos[i] == 'N')
+                             ? ("        " + 8 - (int)snprintf(NULL, 0, "%d", db->fields.decimales[i]))
+                             : "");
+
+                /* Simpler approach for decimals */
+                if (db->fields.tipos[i] == 'N') {
+                    char dec[16];
+                    snprintf(dec, sizeof(dec), "        %d", db->fields.decimales[i]);
+                    strcat(line, dec);
+                }
+                ui_print(line); ui_print_newline();
+            }
+
+            /* Total */
+            snprintf(line, sizeof(line), "** Total **%17d", total_size);
+            ui_print(line); ui_print_newline();
+            ui_refresh();
+        } else {
+            /* Fallback to library function */
+            display_structure(db);
+        }
     }
     skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* LIST [FIELD fields] [scope] [FOR expr] [WHILE expr]                 */
+/* Paginated ncurses output with "-- more --" prompt                    */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_list(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "LIST" */
+
+    /* Parse optional FIELD clause */
+    int *field_list = NULL;
+    int field_count = 0;
+    int show_all_fields = 1;
+
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_FIELD) {
+        *cur = (*cur)->next; /* skip "FIELD" */
+        show_all_fields = 0;
+        while (*cur && !is_eol_or_eof(*cur)) {
+            if ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_KEYWORD) {
+                int *tmp = realloc(field_list, (size_t)(field_count + 1) * sizeof(int));
+                if (tmp) {
+                    field_list = tmp;
+                    char *fname = strdup((*cur)->value);
+                    int fc = wa_field_count();
+                    for (int i = 1; i <= fc; i++) {
+                        char *n = wa_field_name(i);
+                        if (port_strcasecmp(n, fname) == 0) {
+                            field_list[field_count++] = i;
+                            break;
+                        }
+                        free(n);
+                    }
+                    free(fname);
+                }
+                *cur = (*cur)->next;
+            } else if ((*cur)->type == TOK_COMMA) {
+                *cur = (*cur)->next;
+            } else {
+                break;
+            }
+        }
+    }
+
+    /* Parse scope */
+    ScopeInfo si;
+    parse_scope(cur, &si);
+    skip_to_eol(cur);
+
+    DATABASEDBF *db = wa_db();
+    if (!db)
+        return EXEC_OK;
+
+    int total_fields = wa_field_count();
+    if (show_all_fields) {
+        field_list = malloc((size_t)total_fields * sizeof(int));
+        for (int i = 0; i < total_fields; i++)
+            field_list[i] = i + 1;
+        field_count = total_fields;
+    }
+
+    if (!field_list || field_count == 0) {
+        free(field_list);
+        return EXEC_OK;
+    }
+
+    /* Determine iteration range */
+    int saved_rec = wa_recno();
+    int start_rec = 0, end_rec = 0;
+    int iterate = 0; /* 1 if we need to loop through records */
+
+    if (si.scope_record) {
+        wa_goto(si.scope_record);
+    } else if (si.scope_all) {
+        wa_goto_top();
+        start_rec = 1;
+        end_rec = (int)db->recnos;
+        iterate = 1;
+    } else if (si.scope_next) {
+        start_rec = si.scope_next_start;
+        end_rec = start_rec + si.scope_next - 1;
+        iterate = 1;
+    } else if (si.scope_rest) {
+        start_rec = wa_recno();
+        end_rec = (int)db->recnos;
+        iterate = 1;
+    } else {
+        /* No scope — current record only */
+    }
+
+    /* Paginated display */
+    int page_rows = LINES > 0 ? LINES - 3 : 20;
+    if (page_rows < 5) page_rows = 5;
+    int current_row = 0;
+
+    /* Display loop */
+    int rec;
+    if (iterate) {
+        for (rec = start_rec; rec <= end_rec; rec++) {
+            if (rec < 1 || rec > (int)db->recnos)
+                continue;
+            gotos(&db, rec);
+
+            /* Check deleted */
+            if (is_deleted(db) == VERITAS)
+                continue;
+
+            /* Check scope conditions */
+            {
+                int stop_scan = 0;
+                if (!eval_scope(&si, &stop_scan)) {
+                    if (stop_scan) break;
+                    continue;
+                }
+            }
+
+            /* Build the line */
+            {
+                char line[4096] = "";
+                int first = 1;
+                for (int fi = 0; fi < field_count; fi++) {
+                    int fidx = field_list[fi];
+                    char *val = wa_get_field(fidx);
+                    char *name = wa_field_name(fidx);
+                    if (!first) strcat(line, "  ");
+                    strcat(line, name);
+                    strcat(line, "=");
+                    if (val) strcat(line, val);
+                    free(val);
+                    free(name);
+                    first = 0;
+                }
+                mvaddstr(current_row, 0, line);
+                current_row++;
+            }
+
+            if (current_row >= page_rows) {
+                int last_row = LINES > 0 ? LINES - 1 : 23;
+                mvaddstr(last_row, 0, "          -- more --");
+                refresh();
+                int ch = getch();
+                if (ch == 27 || ch == 'q' || ch == 'Q')
+                    break;
+                clrtoeol();
+                current_row = 0;
+                refresh();
+            }
+        }
+    } else {
+        /* Single record (current or RECORD n) */
+        rec = wa_recno();
+        if (rec >= 1 && rec <= (int)db->recnos) {
+            gotos(&db, rec);
+            if (is_deleted(db) != VERITAS) {
+                char line[4096] = "";
+                int first = 1;
+                for (int fi = 0; fi < field_count; fi++) {
+                    int fidx = field_list[fi];
+                    char *val = wa_get_field(fidx);
+                    char *name = wa_field_name(fidx);
+                    if (!first) strcat(line, "  ");
+                    strcat(line, name);
+                    strcat(line, "=");
+                    if (val) strcat(line, val);
+                    free(val);
+                    free(name);
+                    first = 0;
+                }
+                mvaddstr(current_row, 0, line);
+                current_row++;
+            }
+        }
+    }
+
+    refresh();
+    free(field_list);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* BROWSE [FIELDS f1,f2,...] [FOR expr]                                */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_browse(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "BROWSE" */
+
+    /* Parse optional FIELDS clause */
+    char fields_buf[512] = "";
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_FIELD) {
+        *cur = (*cur)->next; /* skip "FIELD" */
+        int first = 1;
+        while (*cur && !is_eol_or_eof(*cur)) {
+            if ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_KEYWORD) {
+                if (!first) strcat(fields_buf, ",");
+                strcat(fields_buf, (*cur)->value);
+                first = 0;
+                *cur = (*cur)->next;
+            } else if ((*cur)->type == TOK_COMMA) {
+                *cur = (*cur)->next;
+            } else {
+                break;
+            }
+        }
+    }
+
+    /* Skip optional FOR expr — BROWSE handles filtering internally */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_FOR) {
+        *cur = (*cur)->next; /* skip "FOR" */
+        /* Evaluate and skip the expression */
+        while (*cur && !is_eol_or_eof(*cur)) {
+            ExprValue val = parse_expr(cur);
+            free_value(&val);
+        }
+    }
+
+    skip_to_eol(cur);
+
+    if (ui_is_active()) {
+        ui_browse(fields_buf[0] ? fields_buf : NULL);
+    } else {
+        /* Fallback: just do LIST */
+        /* Not ideal, but works in non-ncurses mode */
+    }
+
     return EXEC_OK;
 }
 

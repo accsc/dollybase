@@ -121,16 +121,16 @@ ENDFOR
 * LOOP in DO WHILE
 ? ""
 ? "LOOP in DO WHILE:"
-sum = 0
+tsum = 0
 n = 0
 DO WHILE n < 10
   n = n + 1
   IF n % 3 = 0
     LOOP
   ENDIF
-  sum = sum + n
+  tsum = tsum + n
 ENDDO
-? "Sum skipping multiples of 3 =", sum
+? "Sum skipping multiples of 3 =", tsum
 
 * Multiple IF/ELSE chains
 ? ""

@@ -7,6 +7,7 @@ USE books
 
 DISPLAY STRUCTURE
 
+
 ? "--- First 3 records ---"
 DO WHILE RECNO() <= 3 AND NOT EOF()
   ? "RECNO:", RECNO()
@@ -30,6 +31,9 @@ SKIP -5
 ? "--- GO TOP ---"
 GO TOP
 ? "After GO TOP, RECNO:", RECNO()
+
+PAUSE 
+CLEAR
 
 ? "--- GO BOTTOM ---"
 GO BOTTOM

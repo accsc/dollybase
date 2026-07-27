@@ -89,6 +89,7 @@ typedef enum {
     KW_LIST,
     KW_LOCATE,
     KW_PACK,
+    KW_PAUSE,
     KW_RECALL,
     KW_REPLACE,
     KW_SEEK,

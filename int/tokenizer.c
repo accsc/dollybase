@@ -103,6 +103,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"OR",           KW_OR},
     {"PACK",         KW_PACK},
     {"PARAMETERS",   KW_PARAMETERS},
+    {"PAUSE",        KW_PAUSE},
     {"PICTURE",      KW_PICTURE},
     {"PRINTER",      KW_PRINTER},
     {"PRIVATE",      KW_PRIVATE},

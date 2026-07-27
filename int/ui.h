@@ -112,4 +112,13 @@ void ui_print(const char *text);
 /* Advance to next line (for ? newline).                                */
 void ui_print_newline(void);
 
+/* ------------------------------------------------------------------ */
+/* BROWSE — full-screen grid viewer/editor                            */
+/* ------------------------------------------------------------------ */
+
+/* Launch the BROWSE grid for the current work area.                    */
+/* fields: NULL = all fields, or comma-separated field names.           */
+/* Returns 0 on normal exit (F3/Escape).                               */
+int  ui_browse(const char *fields);
+
 #endif /* _UI_H */

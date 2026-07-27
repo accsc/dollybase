@@ -41,6 +41,7 @@ int ui_init(void)
     cbreak();            /* no wait for Enter                          */
     noecho();            /* don't echo input automatically             */
     keypad(stdscr, TRUE);/* enable special keys                        */
+    scrollok(stdscr, TRUE); /* allow auto-scroll when cursor goes past bottom */
     curs_set(1);         /* visible cursor                             */
     ui_active = 1;
     return 0;
@@ -126,31 +127,13 @@ static int print_col = 0;
 void ui_print(const char *text)
 {
     if (!ui_active || !text) return;
-    int len = strlen(text);
-    if (print_col + len >= COLS) {
-        /* Wrap: print what fits, rest on next line */
-        int fit = COLS - print_col;
-        if (fit > 0) mvaddstr(print_row, print_col, text);
-        print_row++;
-        if (print_row >= LINES) { print_row = LINES - 1; }
-        if (fit < len) mvaddstr(print_row, 0, text + fit);
-        print_col = (print_col + len) % COLS;
-    } else {
-        mvaddstr(print_row, print_col, text);
-        print_col += len;
-    }
+    addstr(text);
 }
 
 void ui_print_newline(void)
 {
     if (!ui_active) return;
-    print_row++;
-    print_col = 0;
-    if (print_row >= LINES) {
-        /* Scroll: move everything up one line */
-        scrl(1);
-        print_row = LINES - 1;
-    }
+    addch('\n');
 }
 
 /* ------------------------------------------------------------------ */
@@ -391,4 +374,416 @@ void ui_get_clear(void)
     }
     get_queue = NULL;
     get_last  = NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/* BROWSE — full-screen grid viewer/editor                            */
+/* ------------------------------------------------------------------ */
+
+#include "workarea.h"
+
+/* Browse state */
+typedef struct {
+    int       field_count;       /* number of visible fields           */
+    int       *field_indices;    /* 1-based field indices in DBF       */
+    int       *col_widths;       /* computed column widths             */
+    int       total_records;
+    int       start_rec;         /* first record shown on screen       */
+    int       cur_row;           /* current data row (0-based on screen) */
+    int       cur_col;           /* current column index               */
+    int       data_rows;         /* number of data rows on screen      */
+} BrowseState;
+
+/* Compute column widths from field names and sample data */
+static void browse_compute_widths(BrowseState *bs)
+{
+    for (int i = 0; i < bs->field_count; i++) {
+        int idx = bs->field_indices[i];
+        char *name = wa_field_name(idx);
+        int w = (int)strlen(name);
+        /* Minimum width based on field size */
+        int ftype = wa_field_type(idx);
+        if (ftype == 'N') {
+            int fw = wa_field_type(idx); (void)fw;
+            /* Use field length for numeric */
+            char *sample = wa_get_field(idx);
+            if (sample) {
+                int sl = (int)strlen(sample);
+                if (sl > w) w = sl;
+                free(sample);
+            }
+            if (w < 6) w = 6;
+        } else if (ftype == 'D') {
+            if (w < 10) w = 10;
+        } else if (ftype == 'L') {
+            if (w < 5) w = 5;
+        } else if (ftype == 'M') {
+            if (w < 4) w = 4;
+        } else {
+            /* Character field — cap at 20 for display */
+            char *sample = wa_get_field(idx);
+            if (sample) {
+                int sl = (int)strlen(sample);
+                if (sl > w) w = sl;
+                free(sample);
+            }
+            if (w > 20) w = 20;
+        }
+        bs->col_widths[i] = w + 2; /* padding */
+        free(name);
+    }
+}
+
+/* Draw the BROWSE grid */
+static void browse_draw(BrowseState *bs)
+{
+    int status_row = LINES - 1;
+    int header_row = 0;
+    int first_data = 1;
+
+    erase();
+
+    /* --- Header row: field names --- */
+    int x = 0;
+    mvaddstr(header_row, x, "Rec");
+    x += 4;
+    mvaddch(header_row, x, '|'); /* separator */
+    x++;
+    for (int i = 0; i < bs->field_count; i++) {
+        char *name = wa_field_name(bs->field_indices[i]);
+        int w = bs->col_widths[i];
+        char buf[256] = "";
+        snprintf(buf, sizeof(buf), "%-*s", w - 2, name);
+        mvaddstr(header_row, x, buf);
+        x += w;
+        if (x >= COLS - 1) break;
+        mvaddch(header_row, x, '|');
+        x++;
+        free(name);
+    }
+
+    /* Separator line */
+    for (int c = 0; c < COLS; c++)
+        mvaddch(header_row + 1, c, '-');
+
+    /* --- Data rows --- */
+    int rec = bs->start_rec;
+    for (int r = 0; r < bs->data_rows && rec <= bs->total_records; r++) {
+        int row = first_data + r;
+        if (row >= status_row) break;
+
+        /* Navigate to this record */
+        wa_goto(rec);
+
+        x = 0;
+        /* Record number */
+        char recbuf[16];
+        snprintf(recbuf, sizeof(recbuf), "%4d", rec);
+        mvaddstr(row, x, recbuf);
+        x += 4;
+        mvaddch(row, x, '|');
+        x++;
+
+        for (int i = 0; i < bs->field_count; i++) {
+            int w = bs->col_widths[i];
+            char *val = wa_get_field(bs->field_indices[i]);
+            char buf[256] = "";
+            if (val) {
+                /* Truncate if needed */
+                snprintf(buf, sizeof(buf), "%-*s", w - 2, val);
+                free(val);
+            }
+            /* Highlight current cell */
+            if (r == bs->cur_row && i == bs->cur_col)
+                attron(A_REVERSE);
+            mvaddstr(row, x, buf);
+            if (r == bs->cur_row && i == bs->cur_col)
+                attroff(A_REVERSE);
+            x += w;
+            if (x >= COLS - 1) break;
+            mvaddch(row, x, '|');
+            x++;
+        }
+        rec++;
+    }
+
+    /* --- Status bar --- */
+    int cur_rec = bs->start_rec + bs->cur_row;
+    char status[256];
+    snprintf(status, sizeof(status),
+             "Rec: %d/%d  F1:Help  F2:Del  F3:Quit  F4:Recall  Enter:Edit  Arrows:Nav",
+             cur_rec, bs->total_records);
+    mvaddstr(status_row, 0, status);
+
+    touchwin(stdscr);
+    refresh();
+}
+
+/* Edit a single field in-place */
+static void browse_edit_field(BrowseState *bs, int rec, int col_idx)
+{
+    int fidx = bs->field_indices[col_idx];
+    char *old_val = wa_get_field(fidx);
+    char buf[256] = "";
+    if (old_val) {
+        strncpy(buf, old_val, sizeof(buf) - 1);
+        free(old_val);
+    }
+
+    /* Get screen position of the cell */
+    int row = 1 + bs->cur_row;
+    int x = 5; /* after "Rec|" */
+    for (int i = 0; i < col_idx; i++) {
+        x += bs->col_widths[i] + 1;
+    }
+
+    int w = bs->col_widths[col_idx] - 2;
+
+    /* Create a small window for editing */
+    WINDOW *edwin = newwin(1, w, row, x);
+    if (!edwin) return;
+    wclear(edwin);
+    waddstr(edwin, buf);
+    wrefresh(edwin);
+    keypad(edwin, TRUE);
+    curs_set(2); /* visible block cursor */
+
+    /* Simple line editor */
+    int changed = 0;
+    int c;
+    while ((c = wgetch(edwin)) != 10 && c != 13) { /* Enter = done */
+        if (c == 27) { /* Escape = cancel */
+            changed = -1;
+            break;
+        } else if (c == KEY_BACKSPACE || c == 127) {
+            int p, y;
+            getyx(edwin, p, y);
+            if (y > 0) {
+                mvwdelch(edwin, p, y - 1);
+                waddch(edwin, ' ');
+                mvwaddch(edwin, p, y - 1, ' ');
+                changed = 1;
+                wrefresh(edwin);
+            }
+        } else if (c >= 32 && c < 127) {
+            int p, y;
+            getyx(edwin, p, y);
+            if (y < w) {
+                mvwaddch(edwin, p, y, c);
+                changed = 1;
+                wrefresh(edwin);
+            }
+        }
+    }
+    curs_set(1);
+    delwin(edwin);
+
+    if (changed == 1) {
+        /* Read back the edited content */
+        WINDOW *rdwin = newwin(1, w, row, x);
+        if (rdwin) {
+            char newbuf[256] = "";
+            wgetnstr(rdwin, newbuf, w);
+            /* Pad to original field width */
+            wa_replace(wa_field_name(fidx), newbuf);
+            delwin(rdwin);
+        }
+    }
+    /* If changed == -1 (Escape), don't update */
+}
+
+/* ------------------------------------------------------------------ */
+/* Public: ui_browse                                                  */
+/* ------------------------------------------------------------------ */
+
+int ui_browse(const char *fields)
+{
+    DATABASEDBF *db = wa_db();
+    if (!db || db->camposn == 0) {
+        if (ui_is_active()) {
+            mvaddstr(LINES - 1, 0, "No database open for BROWSE");
+            refresh();
+        }
+        return -1;
+    }
+
+    BrowseState bs;
+    memset(&bs, 0, sizeof(bs));
+
+    /* Determine which fields to show */
+    if (fields && fields[0]) {
+        /* Parse comma-separated field names */
+        char *fcpy = strdup(fields);
+        char *saveptr = NULL;
+        char *tok = strtok_r(fcpy, ",", &saveptr);
+        int count = 0;
+        while (tok) {
+            /* Trim whitespace */
+            while (*tok == ' ') tok++;
+            count++;
+            tok = strtok_r(NULL, ",", &saveptr);
+        }
+        bs.field_count = count;
+        bs.field_indices = calloc((size_t)count, sizeof(int));
+        bs.col_widths = calloc((size_t)count, sizeof(int));
+
+        tok = strtok_r(fcpy, ",", &saveptr);
+        for (int i = 0; i < count && tok; i++) {
+            while (*tok == ' ') tok++;
+            int fidx = wa_field_to_number(tok);
+            if (fidx > 0)
+                bs.field_indices[i] = fidx;
+            else
+                bs.field_indices[i] = i + 1; /* fallback */
+            tok = strtok_r(NULL, ",", &saveptr);
+        }
+        free(fcpy);
+    } else {
+        /* All fields */
+        bs.field_count = db->camposn;
+        bs.field_indices = calloc((size_t)bs.field_count, sizeof(int));
+        bs.col_widths = calloc((size_t)bs.field_count, sizeof(int));
+        for (int i = 0; i < bs.field_count; i++)
+            bs.field_indices[i] = i + 1;
+    }
+
+    bs.total_records = db->recnos;
+    bs.data_rows = LINES - 3; /* header + separator + status bar */
+    if (bs.data_rows < 1) bs.data_rows = 1;
+    bs.cur_row = 0;
+    bs.cur_col = 0;
+    bs.start_rec = 1;
+
+    /* Compute column widths */
+    browse_compute_widths(&bs);
+
+    /* Save original record position */
+    int saved_rec = wa_recno();
+
+    /* Main loop */
+    int done = 0;
+    while (!done) {
+        browse_draw(&bs);
+
+        int c = getch();
+        if (c == ERR) continue;
+
+        int cur_rec = bs.start_rec + bs.cur_row;
+
+        switch (c) {
+            case 27: /* Escape = quit */
+            case KEY_F(3):
+                done = 1;
+                break;
+
+            case KEY_UP:
+                if (bs.cur_row > 0) {
+                    bs.cur_row--;
+                } else if (bs.start_rec > 1) {
+                    bs.start_rec--;
+                }
+                break;
+
+            case KEY_DOWN:
+                if (bs.cur_row < bs.data_rows - 1 &&
+                    bs.start_rec + bs.cur_row + 1 <= bs.total_records) {
+                    bs.cur_row++;
+                } else if (bs.start_rec + bs.data_rows <= bs.total_records) {
+                    bs.start_rec++;
+                }
+                break;
+
+            case KEY_LEFT:
+                if (bs.cur_col > 0) {
+                    bs.cur_col--;
+                } else if (bs.cur_row > 0) {
+                    bs.cur_row--;
+                    bs.cur_col = bs.field_count - 1;
+                } else if (bs.start_rec > 1) {
+                    bs.start_rec--;
+                }
+                break;
+
+            case KEY_RIGHT:
+                if (bs.cur_col < bs.field_count - 1) {
+                    bs.cur_col++;
+                } else if (bs.cur_row < bs.data_rows - 1 &&
+                           bs.start_rec + bs.cur_row + 1 <= bs.total_records) {
+                    bs.cur_row++;
+                    bs.cur_col = 0;
+                } else if (bs.start_rec + bs.data_rows <= bs.total_records) {
+                    bs.start_rec++;
+                    bs.cur_col = 0;
+                }
+                break;
+
+            case KEY_PPAGE: /* Page Up */
+                if (bs.start_rec > bs.data_rows)
+                    bs.start_rec -= bs.data_rows;
+                else
+                    bs.start_rec = 1;
+                bs.cur_row = 0;
+                break;
+
+            case KEY_NPAGE: /* Page Down */
+                if (bs.start_rec + bs.data_rows * 2 <= bs.total_records)
+                    bs.start_rec += bs.data_rows;
+                else
+                    bs.start_rec = bs.total_records - bs.data_rows + 1;
+                if (bs.start_rec < 1) bs.start_rec = 1;
+                bs.cur_row = bs.data_rows - 1;
+                break;
+
+            case KEY_HOME:
+                bs.start_rec = 1;
+                bs.cur_row = 0;
+                bs.cur_col = 0;
+                break;
+
+            case KEY_END:
+                bs.start_rec = bs.total_records - bs.data_rows + 1;
+                if (bs.start_rec < 1) bs.start_rec = 1;
+                bs.cur_row = bs.data_rows - 1;
+                bs.cur_col = bs.field_count - 1;
+                break;
+
+            case 10: /* LF */
+            case 13: /* CR — Enter to edit */
+                if (cur_rec >= 1 && cur_rec <= bs.total_records) {
+                    wa_goto(cur_rec);
+                    browse_edit_field(&bs, cur_rec, bs.cur_col);
+                }
+                break;
+
+            case KEY_F(2): /* Delete record */
+                if (cur_rec >= 1 && cur_rec <= bs.total_records) {
+                    wa_goto(cur_rec);
+                    wa_delete();
+                }
+                break;
+
+            case KEY_F(4): /* Recall record */
+                if (cur_rec >= 1 && cur_rec <= bs.total_records) {
+                    wa_goto(cur_rec);
+                    wa_recall();
+                }
+                break;
+
+            case KEY_F(1): /* Help — just show on status, already there */
+                break;
+        }
+    }
+
+    /* Restore original record position */
+    wa_goto(saved_rec);
+
+    /* Cleanup */
+    free(bs.field_indices);
+    free(bs.col_widths);
+
+    /* Redraw screen after browse */
+    touchwin(stdscr);
+    refresh();
+
+    return 0;
 }

@@ -1222,6 +1222,10 @@ static ExecStatus exec_go(Token **cur)
 
 typedef struct {
     int    scope_all;
+    int    scope_next;           /* 0 = not used, >0 = NEXT n */
+    int    scope_next_start;     /* starting record for NEXT n */
+    int    scope_record;         /* 0 = not used, >0 = RECORD n */
+    int    scope_rest;           /* 1 = REST scope */
     Token *for_start;
     Token *while_start;
 } ScopeInfo;
@@ -1229,6 +1233,10 @@ typedef struct {
 static void parse_scope(Token **cur, ScopeInfo *si)
 {
     si->scope_all = 0;
+    si->scope_next = 0;
+    si->scope_next_start = 0;
+    si->scope_record = 0;
+    si->scope_rest = 0;
     si->for_start = NULL;
     si->while_start = NULL;
 
@@ -1238,6 +1246,41 @@ static void parse_scope(Token **cur, ScopeInfo *si)
     /* Check for ALL */
     if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ALL) {
         si->scope_all = 1;
+        *cur = (*cur)->next;
+        if (!*cur || is_eol_or_eof(*cur))
+            return;
+    }
+
+    /* Check for NEXT n */
+    if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT) {
+        *cur = (*cur)->next; /* skip "NEXT" */
+        si->scope_next = 1;
+        si->scope_next_start = wa_recno();
+        if (*cur && (*cur)->type == TOK_INTEGER) {
+            si->scope_next_start++; /* NEXT starts from current+1 */
+            si->scope_next = atoi((*cur)->value);
+            *cur = (*cur)->next;
+        } else {
+            si->scope_next_start++; /* default: NEXT 1 = current+1 */
+        }
+        if (!*cur || is_eol_or_eof(*cur))
+            return;
+    }
+
+    /* Check for RECORD n */
+    if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_RECORD) {
+        *cur = (*cur)->next; /* skip "RECORD" */
+        if (*cur && (*cur)->type == TOK_INTEGER) {
+            si->scope_record = atoi((*cur)->value);
+            *cur = (*cur)->next;
+        }
+        if (!*cur || is_eol_or_eof(*cur))
+            return;
+    }
+
+    /* Check for REST */
+    if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_REST) {
+        si->scope_rest = 1;
         *cur = (*cur)->next;
         if (!*cur || is_eol_or_eof(*cur))
             return;
@@ -1302,7 +1345,7 @@ static int eval_scope(const ScopeInfo *si, int *stop_scan)
 }
 
 /* ------------------------------------------------------------------ */
-/* DELETE [ALL] [FOR expr] [WHILE expr]                                */
+/* DELETE [ALL|NEXT n|RECORD n|REST] [FOR expr] [WHILE expr]           */
 /* ------------------------------------------------------------------ */
 
 static ExecStatus exec_delete(Token **cur)
@@ -1320,14 +1363,61 @@ static ExecStatus exec_delete(Token **cur)
     int total = reccount(db);
     int saved_rec = wa_recno();
 
-    if (si.scope_all) {
+    if (si.scope_record) {
+        /* DELETE RECORD n — delete specific record */
+        gotos(wa_db_ptr(), si.scope_record);
+        wa_delete();
+
+    } else if (si.scope_all) {
         /* DELETE ALL — mark every record */
         for (int rec = 1; rec <= total; rec++) {
             gotos(wa_db_ptr(), rec);
             wa_delete();
         }
+
+    } else if (si.scope_next) {
+        /* DELETE NEXT n — delete n records starting from current+1 */
+        int start = si.scope_next_start;
+        int count = si.scope_next;
+        int last_valid_rec = 0;
+        for (int i = 0, rec = start; i < count && rec <= total; i++, rec++) {
+            gotos(wa_db_ptr(), rec);
+            if (si.for_start || si.while_start) {
+                int stop = 0;
+                if (!eval_scope(&si, &stop)) {
+                    if (stop) break;
+                    continue;
+                }
+            }
+            last_valid_rec = rec;
+            wa_delete();
+        }
+        if (last_valid_rec > 0)
+            gotos(wa_db_ptr(), last_valid_rec);
+
+    } else if (si.scope_rest) {
+        /* DELETE REST — from current to EOF */
+        int start = wa_recno();
+        int last_valid_rec = 0;
+        for (int rec = start; rec <= total; rec++) {
+            gotos(wa_db_ptr(), rec);
+            if (si.for_start || si.while_start) {
+                int stop = 0;
+                if (!eval_scope(&si, &stop)) {
+                    if (stop) {
+                        if (last_valid_rec > 0)
+                            gotos(wa_db_ptr(), last_valid_rec);
+                        break;
+                    }
+                    continue;
+                }
+            }
+            last_valid_rec = rec;
+            wa_delete();
+        }
+
     } else if (si.for_start || si.while_start) {
-        /* Scoped delete */
+        /* DELETE FOR/WHILE — scan entire file */
         int last_valid_rec = 0;
         for (int rec = 1; rec <= total; rec++) {
             gotos(wa_db_ptr(), rec);
@@ -1343,18 +1433,20 @@ static ExecStatus exec_delete(Token **cur)
             last_valid_rec = rec;
             wa_delete();
         }
+
     } else {
         /* No scope — delete current record only */
         wa_delete();
     }
 
     /* Restore cursor position */
-    gotos(wa_db_ptr(), saved_rec);
+    if (!si.scope_next && !si.scope_rest)
+        gotos(wa_db_ptr(), saved_rec);
     return EXEC_OK;
 }
 
 /* ------------------------------------------------------------------ */
-/* RECALL [ALL] [FOR expr] [WHILE expr]                                */
+/* RECALL [ALL|NEXT n|RECORD n|REST] [FOR expr] [WHILE expr]           */
 /* ------------------------------------------------------------------ */
 
 static ExecStatus exec_recall(Token **cur)
@@ -1372,11 +1464,58 @@ static ExecStatus exec_recall(Token **cur)
     int total = reccount(db);
     int saved_rec = wa_recno();
 
-    if (si.scope_all) {
+    if (si.scope_record) {
+        /* RECALL RECORD n */
+        gotos(wa_db_ptr(), si.scope_record);
+        wa_recall();
+
+    } else if (si.scope_all) {
         for (int rec = 1; rec <= total; rec++) {
             gotos(wa_db_ptr(), rec);
             wa_recall();
         }
+
+    } else if (si.scope_next) {
+        /* RECALL NEXT n */
+        int start = si.scope_next_start;
+        int count = si.scope_next;
+        int last_valid_rec = 0;
+        for (int i = 0, rec = start; i < count && rec <= total; i++, rec++) {
+            gotos(wa_db_ptr(), rec);
+            if (si.for_start || si.while_start) {
+                int stop = 0;
+                if (!eval_scope(&si, &stop)) {
+                    if (stop) break;
+                    continue;
+                }
+            }
+            last_valid_rec = rec;
+            wa_recall();
+        }
+        if (last_valid_rec > 0)
+            gotos(wa_db_ptr(), last_valid_rec);
+
+    } else if (si.scope_rest) {
+        /* RECALL REST */
+        int start = wa_recno();
+        int last_valid_rec = 0;
+        for (int rec = start; rec <= total; rec++) {
+            gotos(wa_db_ptr(), rec);
+            if (si.for_start || si.while_start) {
+                int stop = 0;
+                if (!eval_scope(&si, &stop)) {
+                    if (stop) {
+                        if (last_valid_rec > 0)
+                            gotos(wa_db_ptr(), last_valid_rec);
+                        break;
+                    }
+                    continue;
+                }
+            }
+            last_valid_rec = rec;
+            wa_recall();
+        }
+
     } else if (si.for_start || si.while_start) {
         int last_valid_rec = 0;
         for (int rec = 1; rec <= total; rec++) {
@@ -1393,11 +1532,13 @@ static ExecStatus exec_recall(Token **cur)
             last_valid_rec = rec;
             wa_recall();
         }
+
     } else {
         wa_recall();
     }
 
-    gotos(wa_db_ptr(), saved_rec);
+    if (!si.scope_next && !si.scope_rest)
+        gotos(wa_db_ptr(), saved_rec);
     return EXEC_OK;
 }
 
@@ -1426,17 +1567,44 @@ static ExecStatus exec_zap(Token **cur)
 }
 
 /* ------------------------------------------------------------------ */
-/* REPLACE [ALL] <field> WITH <expr> [FOR cond] [WHILE cond]           */
+/* REPLACE [scope] <field> WITH <expr> [FOR cond] [WHILE cond]         */
+/*   scope = ALL | NEXT n | RECORD n | REST                            */
 /* ------------------------------------------------------------------ */
 
 static ExecStatus exec_replace(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "REPLACE" */
 
-    /* Check for ALL before field name */
-    int scope_all = 0;
+    /* Parse scope modifier before field name */
+    ScopeInfo si;
+    si.scope_all = 0;
+    si.scope_next = 0;
+    si.scope_next_start = 0;
+    si.scope_record = 0;
+    si.scope_rest = 0;
+    si.for_start = NULL;
+    si.while_start = NULL;
+
+    /* Check for scope keywords before field name */
     if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ALL) {
-        scope_all = 1;
+        si.scope_all = 1;
+        *cur = (*cur)->next;
+    } else if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT) {
+        *cur = (*cur)->next;
+        si.scope_next = 1;
+        si.scope_next_start = wa_recno() + 1;
+        if (*cur && (*cur)->type == TOK_INTEGER) {
+            si.scope_next = atoi((*cur)->value);
+            *cur = (*cur)->next;
+        }
+    } else if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_RECORD) {
+        *cur = (*cur)->next;
+        if (*cur && (*cur)->type == TOK_INTEGER) {
+            si.scope_record = atoi((*cur)->value);
+            *cur = (*cur)->next;
+        }
+    } else if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_REST) {
+        si.scope_rest = 1;
         *cur = (*cur)->next;
     }
 
@@ -1473,11 +1641,6 @@ static ExecStatus exec_replace(Token **cur)
     }
 
     /* Parse FOR/WHILE scope after the replacement expression */
-    ScopeInfo si;
-    si.scope_all = scope_all;
-    si.for_start = NULL;
-    si.while_start = NULL;
-
     if (scan && scan->type == TOK_KEYWORD && scan->keyword_id == KW_FOR) {
         si.for_start = scan->next;
         scan = scan->next;
@@ -1505,7 +1668,17 @@ static ExecStatus exec_replace(Token **cur)
     int total = reccount(db);
     int saved_rec = wa_recno();
 
-    if (si.scope_all) {
+    if (si.scope_record) {
+        /* REPLACE RECORD n */
+        gotos(wa_db_ptr(), si.scope_record);
+        Token *rcur = repl_start;
+        ExprValue val = parse_expr(&rcur);
+        char *s = val_to_string(&val);
+        wa_replace(fieldname, s);
+        free(s);
+        free_value(&val);
+
+    } else if (si.scope_all) {
         for (int rec = 1; rec <= total; rec++) {
             gotos(wa_db_ptr(), rec);
             Token *rcur = repl_start;
@@ -1515,6 +1688,58 @@ static ExecStatus exec_replace(Token **cur)
             free(s);
             free_value(&val);
         }
+
+    } else if (si.scope_next) {
+        /* REPLACE NEXT n */
+        int start = si.scope_next_start;
+        int count = si.scope_next;
+        int last_valid_rec = 0;
+        for (int i = 0, rec = start; i < count && rec <= total; i++, rec++) {
+            gotos(wa_db_ptr(), rec);
+            if (si.for_start || si.while_start) {
+                int stop = 0;
+                if (!eval_scope(&si, &stop)) {
+                    if (stop) break;
+                    continue;
+                }
+            }
+            last_valid_rec = rec;
+            Token *rcur = repl_start;
+            ExprValue val = parse_expr(&rcur);
+            char *s = val_to_string(&val);
+            wa_replace(fieldname, s);
+            free(s);
+            free_value(&val);
+        }
+        if (last_valid_rec > 0)
+            gotos(wa_db_ptr(), last_valid_rec);
+
+    } else if (si.scope_rest) {
+        /* REPLACE REST */
+        int start = wa_recno();
+        int last_valid_rec = 0;
+        for (int rec = start; rec <= total; rec++) {
+            gotos(wa_db_ptr(), rec);
+            if (si.for_start || si.while_start) {
+                int stop = 0;
+                if (!eval_scope(&si, &stop)) {
+                    if (stop) {
+                        if (last_valid_rec > 0)
+                            gotos(wa_db_ptr(), last_valid_rec);
+                        break;
+                    }
+                    continue;
+                }
+            }
+            last_valid_rec = rec;
+            Token *rcur = repl_start;
+            ExprValue val = parse_expr(&rcur);
+            char *s = val_to_string(&val);
+            wa_replace(fieldname, s);
+            free(s);
+            free_value(&val);
+        }
+
     } else if (si.for_start || si.while_start) {
         int last_valid_rec = 0;
         for (int rec = 1; rec <= total; rec++) {
@@ -1536,6 +1761,7 @@ static ExecStatus exec_replace(Token **cur)
             free(s);
             free_value(&val);
         }
+
     } else {
         /* No scope — replace current record only */
         ExprValue val = parse_expr(&repl_start);
@@ -1545,7 +1771,8 @@ static ExecStatus exec_replace(Token **cur)
         free_value(&val);
     }
 
-    gotos(wa_db_ptr(), saved_rec);
+    if (!si.scope_next && !si.scope_rest)
+        gotos(wa_db_ptr(), saved_rec);
     return EXEC_OK;
 }
 

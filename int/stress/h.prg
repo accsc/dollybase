@@ -1,0 +1,6 @@
+USE books_memo
+DO WHILE NOT EOF()
+? A->TITULO 
+? A->COMMENTS
+SKIP
+ENDDO

@@ -437,9 +437,10 @@ static void browse_compute_widths(BrowseState *bs)
 /* Draw the BROWSE grid */
 static void browse_draw(BrowseState *bs)
 {
+    DATABASEDBF *db = wa_db();
     int status_row = LINES - 1;
     int header_row = 0;
-    int first_data = 1;
+    int first_data = 2; /* row 0 = header, row 1 = separator */
 
     erase();
 
@@ -476,10 +477,17 @@ static void browse_draw(BrowseState *bs)
         wa_goto(rec);
 
         x = 0;
-        /* Record number */
+        /* Record number — prefix with * if deleted */
         char recbuf[16];
-        snprintf(recbuf, sizeof(recbuf), "%4d", rec);
-        mvaddstr(row, x, recbuf);
+        int del = is_deleted(db) == VERITAS;
+        if (del) {
+            mvaddch(row, x, '*');
+            snprintf(recbuf, sizeof(recbuf), "%3d", rec);
+            mvaddstr(row, x + 1, recbuf);
+        } else {
+            snprintf(recbuf, sizeof(recbuf), "%4d", rec);
+            mvaddstr(row, x, recbuf);
+        }
         x += 4;
         mvaddch(row, x, '|');
         x++;
@@ -519,9 +527,10 @@ static void browse_draw(BrowseState *bs)
     refresh();
 }
 
-/* Edit a single field in-place */
+/* Edit a single field in-place on stdscr (no sub-windows) */
 static void browse_edit_field(BrowseState *bs, int rec, int col_idx)
 {
+    (void)rec; /* rec is already positioned via wa_goto before call */
     int fidx = bs->field_indices[col_idx];
     char *old_val = wa_get_field(fidx);
     char buf[256] = "";
@@ -530,66 +539,88 @@ static void browse_edit_field(BrowseState *bs, int rec, int col_idx)
         free(old_val);
     }
 
-    /* Get screen position of the cell */
-    int row = 1 + bs->cur_row;
-    int x = 5; /* after "Rec|" */
+    /* Screen position of the cell content (after the '|' separator) */
+    int row = 2 + bs->cur_row; /* header(0) + sep(1) + data starts at 2 */
+    int x = 5; /* "Rec|" = 4 + 1 */
     for (int i = 0; i < col_idx; i++) {
         x += bs->col_widths[i] + 1;
     }
 
-    int w = bs->col_widths[col_idx] - 2;
+    int edit_w = bs->col_widths[col_idx] - 2;
+    if (edit_w < 1) edit_w = 1;
 
-    /* Create a small window for editing */
-    WINDOW *edwin = newwin(1, w, row, x);
-    if (!edwin) return;
-    wclear(edwin);
-    waddstr(edwin, buf);
-    wrefresh(edwin);
-    keypad(edwin, TRUE);
-    curs_set(2); /* visible block cursor */
-
-    /* Simple line editor */
+    /* Line editor on stdscr — track cursor position in `cp` */
+    int cp = (int)strlen(buf); /* cursor at end of existing content */
     int changed = 0;
+
+    /* Draw initial cell state */
+    mvaddstr(row, x, buf);
+    {
+        int cur_len = (int)strlen(buf);
+        for (int p = cur_len; p < edit_w; p++)
+            mvaddch(row, x + p, ' ');
+    }
+    attron(A_REVERSE);
+    move(row, x + cp);
+    attroff(A_REVERSE);
+    curs_set(2);
+    refresh();
+
     int c;
-    while ((c = wgetch(edwin)) != 10 && c != 13) { /* Enter = done */
+    while ((c = getch()) != 10 && c != 13) {
         if (c == 27) { /* Escape = cancel */
             changed = -1;
             break;
         } else if (c == KEY_BACKSPACE || c == 127) {
-            int p, y;
-            getyx(edwin, p, y);
-            if (y > 0) {
-                mvwdelch(edwin, p, y - 1);
-                waddch(edwin, ' ');
-                mvwaddch(edwin, p, y - 1, ' ');
+            if (cp > 0) {
+                memmove(buf + cp - 1, buf + cp, strlen(buf) - cp + 1);
+                cp--;
                 changed = 1;
-                wrefresh(edwin);
             }
+        } else if (c == KEY_LEFT) {
+            if (cp > 0) cp--;
+        } else if (c == KEY_RIGHT) {
+            if (cp < (int)strlen(buf)) cp++;
+        } else if (c == KEY_HOME) {
+            cp = 0;
+        } else if (c == KEY_END) {
+            cp = (int)strlen(buf);
         } else if (c >= 32 && c < 127) {
-            int p, y;
-            getyx(edwin, p, y);
-            if (y < w) {
-                mvwaddch(edwin, p, y, c);
+            if ((int)strlen(buf) < (int)sizeof(buf) - 1) {
+                memmove(buf + cp + 1, buf + cp, strlen(buf) - cp + 1);
+                buf[cp] = (char)c;
+                if (cp < edit_w) cp++;
                 changed = 1;
-                wrefresh(edwin);
             }
+        } else if (c == KEY_DC) {
+            if (cp < (int)strlen(buf)) {
+                memmove(buf + cp, buf + cp + 1, strlen(buf) - cp);
+                changed = 1;
+            }
+        } else {
+            continue;
         }
+
+        /* Redraw the cell */
+        mvaddstr(row, x, buf);
+        {
+            int cur_len = (int)strlen(buf);
+            for (int p = cur_len; p < edit_w; p++)
+                mvaddch(row, x + p, ' ');
+        }
+        attron(A_REVERSE);
+        move(row, x + cp);
+        attroff(A_REVERSE);
+        refresh();
     }
     curs_set(1);
-    delwin(edwin);
 
     if (changed == 1) {
-        /* Read back the edited content */
-        WINDOW *rdwin = newwin(1, w, row, x);
-        if (rdwin) {
-            char newbuf[256] = "";
-            wgetnstr(rdwin, newbuf, w);
-            /* Pad to original field width */
-            wa_replace(wa_field_name(fidx), newbuf);
-            delwin(rdwin);
-        }
+        char *fname = wa_field_name(fidx);
+        wa_replace(fname, buf);
+        free(fname);
     }
-    /* If changed == -1 (Escape), don't update */
+    /* If changed == -1 (Escape), don't update — old value stays */
 }
 
 /* ------------------------------------------------------------------ */
@@ -665,8 +696,73 @@ int ui_browse(const char *fields)
     while (!done) {
         browse_draw(&bs);
 
+        /* Use halfdelay so we can distinguish bare Escape from F-key sequences.
+           In cbreak mode, F keys arrive as ESC + sequence. A bare Escape is
+           sent alone. We wait briefly to see if more bytes follow. */
         int c = getch();
         if (c == ERR) continue;
+
+        /* If we got Escape, distinguish bare Escape from F-key escape
+           sequences by checking if more input bytes are pending. */
+        if (c == 27) {
+            nodelay(stdscr, TRUE);
+            /* Collect all pending bytes of the escape sequence */
+            int seq_bytes[16];
+            seq_bytes[0] = 27;
+            int slen = 1;
+            /* Wait for the full sequence to arrive (up to 200ms total) */
+            for (int i = 0; i < 20 && slen < 16; i++) {
+                usleep(10000); /* 10ms per iteration */
+                int c2 = getch();
+                if (c2 == ERR) continue;
+                seq_bytes[slen++] = c2;
+            }
+            nodelay(stdscr, FALSE);
+            if (slen > 1) {
+                /* Escape sequence received — parse it */
+                c = 27; /* fallback */
+                if (slen >= 3 && seq_bytes[1] == '[') {
+                    /* CSI sequence */
+                    if (slen == 3) {
+                        switch (seq_bytes[2]) {
+                            case 'A': c = KEY_UP; break;
+                            case 'B': c = KEY_DOWN; break;
+                            case 'C': c = KEY_RIGHT; break;
+                            case 'D': c = KEY_LEFT; break;
+                        }
+                    }
+                    /* F keys: [11~=F1, [12~=F2, [13~=F3, [14~=F4,
+                               [15~=F5, [17~=F6, [18~=F7, [19~=F8 */
+                    if (slen >= 4 && seq_bytes[slen - 1] == '~') {
+                        if (seq_bytes[2] == '1') {
+                            switch (seq_bytes[3]) {
+                                case '1': c = KEY_F(1); break;
+                                case '2': c = KEY_F(2); break;
+                                case '3': c = KEY_F(3); break;
+                                case '4': c = KEY_F(4); break;
+                                case '5': c = KEY_F(5); break;
+                            }
+                        } else if (seq_bytes[2] == '1' && seq_bytes[3] == '7') {
+                            c = KEY_F(6);
+                        } else if (seq_bytes[2] == '1' && seq_bytes[3] == '8') {
+                            c = KEY_F(7);
+                        } else if (seq_bytes[2] == '1' && seq_bytes[3] == '9') {
+                            c = KEY_F(8);
+                        }
+                    }
+                } else if (slen >= 3 && seq_bytes[1] == 'O') {
+                    /* SS3 sequence — F1-F4 on many terminals */
+                    switch (seq_bytes[2]) {
+                        case 'P': c = KEY_F(1); break;
+                        case 'Q': c = KEY_F(2); break;
+                        case 'R': c = KEY_F(3); break;
+                        case 'S': c = KEY_F(4); break;
+                    }
+                }
+                /* If still 27, unrecognized sequence — treat as quit */
+            }
+            /* If slen == 1, it was a bare Escape — c stays 27 = quit */
+        }
 
         int cur_rec = bs.start_rec + bs.cur_row;
 
@@ -759,6 +855,12 @@ int ui_browse(const char *fields)
                 if (cur_rec >= 1 && cur_rec <= bs.total_records) {
                     wa_goto(cur_rec);
                     wa_delete();
+                    /* Flash message on status bar */
+                    int sr = LINES - 1;
+                    mvaddstr(sr, 0, "Record deleted (flagged)                                                                  ");
+                    mvaddstr(sr, 0, "Record deleted (flagged)");
+                    refresh();
+                    usleep(500000); /* 0.5s flash */
                 }
                 break;
 
@@ -766,6 +868,12 @@ int ui_browse(const char *fields)
                 if (cur_rec >= 1 && cur_rec <= bs.total_records) {
                     wa_goto(cur_rec);
                     wa_recall();
+                    /* Flash message on status bar */
+                    int sr = LINES - 1;
+                    mvaddstr(sr, 0, "Record recalled                                                                          ");
+                    mvaddstr(sr, 0, "Record recalled");
+                    refresh();
+                    usleep(500000);
                 }
                 break;
 

@@ -277,14 +277,31 @@ int wa_pack(void)
     DATABASEDBF *db = wa_db();
     if (!db) return -1;
 
+    char db_name[1024];
+    strncpy(db_name, db->name, sizeof(db_name) - 1);
+    db_name[sizeof(db_name) - 1] = '\0';
+
+    int saved_rec = db->current;
+    int sel = wa_get_selected();
+
     /* If database has a DBT file (tipo 3 = dBase III+ DBT, tipo 4 = dBase IV DBT),
      * use the DBT-aware pack function */
     if (db->tipo == 3 || db->tipo == 4) {
         char dbt_name[1024];
         get_dbt(db->name, dbt_name);
-        return pack_db_with_dbt_file(db, dbt_name);
+        pack_db_with_dbt_file(db, dbt_name);
+    } else {
+        pack(db);
     }
-    return pack(db);
+
+    /* Close and re-open to reload header (recnos changed on disk) */
+    wa_close(sel);
+    wa_use(db_name, sel);
+    wa_goto(saved_rec);
+    if (wa_eof())
+        wa_goto_bottom();
+
+    return 0;
 }
 
 int wa_zap(void)

@@ -9,6 +9,8 @@
 #include "variables.h"
 #include "workarea.h"
 
+extern int g_set_century;  /* from executor.c */
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -16,6 +18,7 @@
 #include <ctype.h>
 #include <strings.h>
 #include <time.h>
+#include <sys/utsname.h>
 #include <curses.h>
 
 /* ------------------------------------------------------------------ */
@@ -62,13 +65,18 @@ static ExprValue builtin_isupper(Token **cur, ParseError *err);
 static ExprValue builtin_inkey(Token **cur, ParseError *err);
 static ExprValue builtin_empty(Token **cur, ParseError *err);
 static ExprValue builtin_type(Token **cur, ParseError *err);
+static ExprValue builtin_os(Token **cur, ParseError *err);
+static ExprValue builtin_version(Token **cur, ParseError *err);
 static ExprValue builtin_at_func(Token **cur, ParseError *err);
 static ExprValue builtin_between(Token **cur, ParseError *err);
+static ExprValue builtin_cdow(Token **cur, ParseError *err);
+static ExprValue builtin_cmonth(Token **cur, ParseError *err);
 static ExprValue builtin_date_func(Token **cur, ParseError *err);
 static ExprValue builtin_str(Token **cur, ParseError *err);
 static ExprValue builtin_dtoc(Token **cur, ParseError *err);
 static ExprValue builtin_ctod(Token **cur, ParseError *err);
 static ExprValue builtin_day(Token **cur, ParseError *err);
+static ExprValue builtin_dow(Token **cur, ParseError *err);
 static ExprValue builtin_month(Token **cur, ParseError *err);
 static ExprValue builtin_year(Token **cur, ParseError *err);
 static ExprValue builtin_time(Token **cur, ParseError *err);
@@ -81,6 +89,9 @@ static ExprValue builtin_dbf(Token **cur, ParseError *err);
 static ExprValue builtin_deleted(Token **cur, ParseError *err);
 static ExprValue builtin_found(Token **cur, ParseError *err);
 static ExprValue builtin_sign(Token **cur, ParseError *err);
+static ExprValue builtin_exp(Token **cur, ParseError *err);
+static ExprValue builtin_log(Token **cur, ParseError *err);
+static ExprValue builtin_mod(Token **cur, ParseError *err);
 static ExprValue builtin_max(Token **cur, ParseError *err);
 static ExprValue builtin_min(Token **cur, ParseError *err);
 static ExprValue builtin_replicate(Token **cur, ParseError *err);
@@ -720,13 +731,17 @@ static const FuncEntry func_table[] = {
     { KW_BETWEEN,   builtin_between },
     { KW_BOF,       builtin_bof },
     { KW_CHR,       builtin_chr },
+    { KW_CDOW,      builtin_cdow },
+    { KW_CMONTH,    builtin_cmonth },
     { KW_CTOD,      builtin_ctod },
     { KW_DATE,      builtin_date_func },
     { KW_DAY,       builtin_day },
     { KW_DELETED,   builtin_deleted },
+    { KW_DOW,       builtin_dow },
     { KW_DTOC,      builtin_dtoc },
     { KW_EMPTY,     builtin_empty },
     { KW_EOF,       builtin_eof },
+    { KW_EXP,       builtin_exp },
     { KW_FOUND,     builtin_found },
     { KW_IIF,       builtin_iif },
     { KW_ISALPHA,   builtin_isalpha },
@@ -736,10 +751,12 @@ static const FuncEntry func_table[] = {
     { KW_INT_FUNC,  builtin_int_func },
     { KW_LEFT_FUNC, builtin_left_func },
     { KW_LEN,       builtin_len },
+    { KW_LOG,       builtin_log },
     { KW_LOWER,     builtin_lower },
     { KW_LTRIM,     builtin_ltrim },
     { KW_MAX,       builtin_max },
     { KW_MIN,       builtin_min },
+    { KW_MOD,       builtin_mod },
     { KW_MONTH,     builtin_month },
     { KW_RECN,      builtin_recn },
     { KW_RECNO,     builtin_recno },
@@ -753,10 +770,12 @@ static const FuncEntry func_table[] = {
     { KW_SPACE,     builtin_space },
     { KW_SUBSTR,    builtin_substr },
     { KW_STUFF,     builtin_stuff },
+    { KW_OS,        builtin_os },
     { KW_TYPE,      builtin_type },
     { KW_UPPER,     builtin_upper },
     { KW_TRIM,      builtin_trim },
     { KW_VAL,       builtin_val },
+    { KW_VERSION,   builtin_version },
     { KW_YEAR,      builtin_year },
     { KW_TIME,      builtin_time },
     /* Additional functions */
@@ -878,6 +897,39 @@ static ExprValue builtin_sqrt(Token **cur, ParseError *err) {
     if (*err != PARSE_OK) return arg;
     double v = sqrt(val_to_double(&arg));
     free_value(&arg);
+    return val_real(v);
+}
+
+/* EXP(x) — e^x */
+static ExprValue builtin_exp(Token **cur, ParseError *err) {
+    ExprValue arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) return arg;
+    double v = exp(val_to_double(&arg));
+    free_value(&arg);
+    return val_real(v);
+}
+
+/* LOG(x) — natural logarithm (ln) */
+static ExprValue builtin_log(Token **cur, ParseError *err) {
+    ExprValue arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) return arg;
+    double v = log(val_to_double(&arg));
+    free_value(&arg);
+    return val_real(v);
+}
+
+/* MOD(m, n) — modulus (remainder of m / n) */
+static ExprValue builtin_mod(Token **cur, ParseError *err) {
+    ExprValue arg1 = parse_expression(cur, err);
+    if (*err != PARSE_OK) return arg1;
+    skip_comma(cur);
+    ExprValue arg2 = parse_expression(cur, err);
+    if (*err != PARSE_OK) { free_value(&arg1); return arg2; }
+    double m = val_to_double(&arg1);
+    double n = val_to_double(&arg2);
+    free_value(&arg1);
+    free_value(&arg2);
+    double v = fmod(m, n);
     return val_real(v);
 }
 
@@ -1298,19 +1350,57 @@ static ExprValue builtin_empty(Token **cur, ParseError *err) {
 static ExprValue builtin_type(Token **cur, ParseError *err) {
     ExprValue arg = parse_expression(cur, err);
     if (*err != PARSE_OK) return arg;
-    /* Returns a single-char string: N=numeric, C=character, D=date, L=logical, O=object, U=undefined */
+    /*
+     * TYPE("varname") — dBASE convention: argument is a string with the
+     * variable/field name.  Returns "C", "N", "L", "D", "M", or "U".
+     * If the argument is not a string, fall back to inspecting its value type.
+     */
     char code = 'U';
-    switch (arg.type) {
-        case VAL_INTEGER:
-        case VAL_REAL:   code = 'N'; break;
-        case VAL_STRING:  code = 'C'; break;
-        case VAL_DATE:    code = 'D'; break;
-        case VAL_LOGICAL: code = 'L'; break;
-        case VAL_NULL:    code = 'U'; break;
+    if (arg.type == VAL_STRING && arg.data.sval) {
+        /* Look up the named variable */
+        ExprValue v = vars_get(arg.data.sval);
+        switch (v.type) {
+            case VAL_INTEGER:
+            case VAL_REAL:   code = 'N'; break;
+            case VAL_STRING:  code = 'C'; break;
+            case VAL_DATE:    code = 'D'; break;
+            case VAL_LOGICAL: code = 'L'; break;
+            case VAL_NULL:    code = 'U'; break;
+        }
+        free_value(&v);
+    } else {
+        /* Fallback: inspect the evaluated value directly */
+        switch (arg.type) {
+            case VAL_INTEGER:
+            case VAL_REAL:   code = 'N'; break;
+            case VAL_STRING:  code = 'C'; break;
+            case VAL_DATE:    code = 'D'; break;
+            case VAL_LOGICAL: code = 'L'; break;
+            case VAL_NULL:    code = 'U'; break;
+        }
     }
     free_value(&arg);
     char buf[2] = {code, '\0'};
     return val_string(buf);
+}
+
+/* OS() — return OS name and version string */
+static ExprValue builtin_os(Token **cur, ParseError *err) {
+    (void)cur; (void)err;
+    struct utsname u;
+    char buf[128];
+    if (uname(&u) == 0) {
+        snprintf(buf, sizeof(buf), "%s %s", u.sysname, u.release);
+    } else {
+        snprintf(buf, sizeof(buf), "Unknown");
+    }
+    return val_string(buf);
+}
+
+/* VERSION() — return dollybase version string */
+static ExprValue builtin_version(Token **cur, ParseError *err) {
+    (void)cur; (void)err;
+    return val_string("0.5");
 }
 
 static ExprValue builtin_at_func(Token **cur, ParseError *err) {
@@ -1364,9 +1454,80 @@ static ExprValue builtin_between(Token **cur, ParseError *err) {
 
 static ExprValue builtin_date_func(Token **cur, ParseError *err) {
     (void)cur; (void)err;
-    /* Returns current date as a DATE value — stub returns "0000-00-00" */
-    /* In the full interpreter this would call localtime() */
-    return val_date("2026-07-26");
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    char buf[12];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d", t->tm_year + 1900, t->tm_mon + 1, t->tm_mday);
+    return val_date(buf);
+}
+
+/* Helper: extract date components from a VAL_DATE or string */
+static void parse_date_components(const char *dval, int *y, int *m, int *d) {
+    *y = 0; *m = 0; *d = 0;
+    sscanf(dval, "%d-%d-%d", y, m, d);
+}
+
+/* Helper: compute day of week (0=Sunday .. 6=Saturday) via Zeller-like formula */
+static int day_of_week(int y, int m, int d) {
+    /* Tomohiko Sakamoto's algorithm */
+    static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+    if (m < 3) y--;
+    return (y + y/4 - y/100 + y/400 + t[m-1] + d) % 7;
+}
+
+/* CDOW(date) — full day name of the week */
+static ExprValue builtin_cdow(Token **cur, ParseError *err) {
+    ExprValue arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) return arg;
+    const char *days[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+    int y, m, d;
+    if (arg.type == VAL_DATE) {
+        parse_date_components(arg.data.dval, &y, &m, &d);
+    } else {
+        char *s = val_to_string(&arg);
+        parse_date_components(s, &y, &m, &d);
+        free(s);
+    }
+    free_value(&arg);
+    int dow = day_of_week(y, m, d);
+    return val_string((char *)days[dow]);
+}
+
+/* CMONTH(date) — full month name */
+static ExprValue builtin_cmonth(Token **cur, ParseError *err) {
+    ExprValue arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) return arg;
+    const char *months[] = {"", "January", "February", "March", "April", "May", "June",
+                            "July", "August", "September", "October", "November", "December"};
+    int y, m, d;
+    if (arg.type == VAL_DATE) {
+        parse_date_components(arg.data.dval, &y, &m, &d);
+    } else {
+        char *s = val_to_string(&arg);
+        parse_date_components(s, &y, &m, &d);
+        free(s);
+    }
+    free_value(&arg);
+    if (m < 1 || m > 12) m = 1;
+    return val_string((char *)months[m]);
+}
+
+/* DOW(date) — day of week as number (1=Sunday .. 7=Saturday) */
+static ExprValue builtin_dow(Token **cur, ParseError *err) {
+    ExprValue arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) return arg;
+    int y, m, d;
+    if (arg.type == VAL_DATE) {
+        parse_date_components(arg.data.dval, &y, &m, &d);
+    } else {
+        char *s = val_to_string(&arg);
+        parse_date_components(s, &y, &m, &d);
+        free(s);
+    }
+    free_value(&arg);
+    /* Sakamoto returns 0=Sunday, dBASE DOW returns 1=Sunday..7=Saturday */
+    int dow = day_of_week(y, m, d) + 1;
+    return val_integer(dow);
 }
 
 static ExprValue builtin_dtoc(Token **cur, ParseError *err) {
@@ -1450,6 +1611,8 @@ static ExprValue builtin_year(Token **cur, ParseError *err) {
         free(s);
     }
     free_value(&arg);
+    /* SET CENTURY OFF => return 2-digit year */
+    if (!g_set_century && y >= 1000) y %= 100;
     return val_integer(y);
 }
 
@@ -1519,7 +1682,7 @@ static ExprValue builtin_sign(Token **cur, ParseError *err) {
     return val_integer(result);
 }
 
-/* STR(n [,length [,decimals]]) — convert number to string             */
+/* STR(n, length, decimals) — dBASE convention: 3 params, right-justified */
 static ExprValue builtin_str(Token **cur, ParseError *err) {
     ExprValue arg = parse_expression(cur, err);
     if (*err != PARSE_OK) return arg;
@@ -1528,9 +1691,8 @@ static ExprValue builtin_str(Token **cur, ParseError *err) {
 
     int length = 10;
     int decimals = 0;
-    int decimals_given = 0;
 
-    /* Optional length argument */
+    /* length argument */
     if (*cur && (*cur)->type == TOK_COMMA) {
         *cur = (*cur)->next;
         ExprValue lenVal = parse_expression(cur, err);
@@ -1539,7 +1701,7 @@ static ExprValue builtin_str(Token **cur, ParseError *err) {
         free_value(&lenVal);
         if (length < 1) length = 1;
 
-        /* Optional decimals argument */
+        /* decimals argument */
         if (*cur && (*cur)->type == TOK_COMMA) {
             *cur = (*cur)->next;
             ExprValue decVal = parse_expression(cur, err);
@@ -1547,15 +1709,11 @@ static ExprValue builtin_str(Token **cur, ParseError *err) {
             decimals = (int)val_to_double(&decVal);
             free_value(&decVal);
             if (decimals < 0) decimals = 0;
-            decimals_given = 1;
         }
     }
 
-    /* Default: 0 decimals. If caller explicitly asks, use that value. */
-    /* dBASE STR() does not append .00 by default. */
-
     char buf[64];
-    snprintf(buf, sizeof(buf), "% *.*f", length, decimals, v);
+    snprintf(buf, sizeof(buf), "%*.*f", length, decimals, v);
     return val_string(buf);
 }
 

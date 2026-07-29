@@ -17,6 +17,9 @@
 #include "workarea.h"
 #include "ui.h"
 
+/* Global SET flags */
+int g_set_century = 1;  /* SET CENTURY ON by default (dBASE convention) */
+
 /* ------------------------------------------------------------------ */
 /* Portable case-insensitive string compare                            */
 /* ------------------------------------------------------------------ */
@@ -1192,6 +1195,9 @@ static ExecStatus exec_set(Token **cur)
     if (*cur && (*cur)->type == TOK_IDENT) {
         const char *flag = (*cur)->value;
         int on = (port_strcasecmp(flag, "ON") == 0);
+        if (setting == KW_CENTURY) {
+            g_set_century = on;
+        }
         (void)on; /* settings not yet wired to config */
         (*cur) = (*cur)->next;
     } else if (*cur && match_keyword(cur, KW_STEP)) {

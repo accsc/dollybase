@@ -246,7 +246,7 @@ static void create_draw(CreateState *cs)
     /* Status bar */
     char status[256];
     snprintf(status, sizeof(status),
-             "Fields: %d  Esc:Cancel  ^End:Save  ^N:Add  ^U:Del  Arrows:Nav  Enter:Edit",
+             "Fields: %d  Esc:Cancel  F10:Save  ^N:Add  ^U:Del  Arrows:Nav  Enter:Edit",
              cs->field_count);
     mvaddstr(status_row, 0, status);
 
@@ -444,8 +444,14 @@ static int parse_escape_sequence(void)
                     case '2': return KEY_F(2);
                     case '3': return KEY_F(3);
                     case '4': return KEY_F(4);
+                    case '5': return KEY_F(5);
                     default: break;
                 }
+            } else if (seq_bytes[2] == '2') {
+                if (seq_bytes[3] == '1') return KEY_F(10);
+                if (seq_bytes[3] == '2') return KEY_F(11);
+                if (seq_bytes[3] == '3') return KEY_F(12);
+                if (slen == 4 && seq_bytes[3] == '~') return KEY_F(6);
             }
         }
     } else if (slen >= 3 && seq_bytes[1] == 'O') {
@@ -618,9 +624,7 @@ int ui_create(const char *filename)
                 break;
             }
 
-            case 236: /* Ctrl+End = 0xEC = 236 on many terminals */
-            case 0x14: /* Ctrl+D is sometimes used for Ctrl+End */
-            { /* Save and create database */
+            case KEY_F(10): { /* F10: save and create database */
                 int error = 0;
                 char err_msg[256] = "";
 

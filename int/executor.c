@@ -1748,11 +1748,15 @@ static ExecStatus exec_accept(Token **cur)
         char buf[256] = "";
         if (ui_is_active()) {
             nodelay(stdscr, FALSE);
+            nocbreak();
+            echo();
+            curs_set(1);
             addstr(msg);
             refresh();
-            echo();
             getnstr(buf, sizeof(buf) - 1);
+            curs_set(0);
             noecho();
+            cbreak();
             addch('\n');
             refresh();
         } else {

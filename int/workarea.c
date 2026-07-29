@@ -280,7 +280,7 @@ int wa_use(const char *filename, int area, const char *alias)
     // On failure (file not found), use() frees its internal copy and returns
     // without touching *asp, leaving our malloc'd block untouched.
     // We detect failure by checking if name[0] is still '\0'.
-    if (db->name[0] == '\0') {
+    if (db->name[0] == '\0' || db->tipo == 0) {
         fprintf(stderr, "prg: cannot open '%s'\n", path);
         free(db);
         return -1;

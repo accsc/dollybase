@@ -1292,7 +1292,15 @@ static ExecStatus exec_use(Token **cur)
         }
     }
 
-    wa_use(filename, -1, alias_name[0] ? alias_name : NULL);
+    if (wa_use(filename, -1, alias_name[0] ? alias_name : NULL) != 0) {
+        /* wa_use already printed to stderr; also show on screen */
+        char msg[1100];
+        snprintf(msg, sizeof(msg), "Error: cannot open database '%s'", filename);
+        printw("%s", msg);
+        refresh();
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
 
     /* Set indexes if specified */
     if (index_tags[0]) {

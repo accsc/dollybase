@@ -9,7 +9,7 @@ SET TALK OFF
 * Open the database
 USE books_memo
 
-? "Loaded " + LTRIM(STR(RECNO(), 5)) + " records in books_memo"
+? "Loaded " + LTRIM(STR(RECCOUNT(), 5,0)) + " records in books_memo"
 WAIT
 
 * --- Main loop ---

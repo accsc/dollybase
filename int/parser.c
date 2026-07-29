@@ -80,6 +80,8 @@ static ExprValue builtin_dow(Token **cur, ParseError *err);
 static ExprValue builtin_month(Token **cur, ParseError *err);
 static ExprValue builtin_year(Token **cur, ParseError *err);
 static ExprValue builtin_time(Token **cur, ParseError *err);
+static ExprValue builtin_reccount(Token **cur, ParseError *err);
+static ExprValue builtin_lupdate(Token **cur, ParseError *err);
 static ExprValue builtin_recno(Token **cur, ParseError *err);
 static ExprValue builtin_recn(Token **cur, ParseError *err);
 static ExprValue builtin_eof(Token **cur, ParseError *err);
@@ -758,6 +760,8 @@ static const FuncEntry func_table[] = {
     { KW_MIN,       builtin_min },
     { KW_MOD,       builtin_mod },
     { KW_MONTH,     builtin_month },
+    { KW_LUPDATE,   builtin_lupdate },
+    { KW_RECCOUNT,  builtin_reccount },
     { KW_RECN,      builtin_recn },
     { KW_RECNO,     builtin_recno },
     { KW_RIGHT_FUNC,builtin_right_func },
@@ -1628,6 +1632,31 @@ static ExprValue builtin_time(Token **cur, ParseError *err) {
 static ExprValue builtin_recno(Token **cur, ParseError *err) {
     (void)cur; (void)err;
     return val_integer(wa_recno());
+}
+
+/* RECCOUNT() — total number of records in the current database */
+static ExprValue builtin_reccount(Token **cur, ParseError *err) {
+    (void)cur; (void)err;
+    return val_integer(wa_reccount());
+}
+
+/* LUPDATE() — last update date of the current database as DATE value */
+static ExprValue builtin_lupdate(Token **cur, ParseError *err) {
+    (void)cur; (void)err;
+    char *datestr = NULL;
+    lupdate(wa_db(), &datestr);
+    if (datestr && strlen(datestr) >= 8) {
+        /* DBF stores date as MMDDYYYY, convert to YYYY-MM-DD */
+        char buf[12];
+        snprintf(buf, sizeof(buf), "%c%c%c%c-%c%c-%c%c",
+                 datestr[4], datestr[5], datestr[6], datestr[7],
+                 datestr[0], datestr[1],
+                 datestr[2], datestr[3]);
+        free(datestr);
+        return val_date(buf);
+    }
+    free(datestr);
+    return val_date("0000-00-00");
 }
 
 static ExprValue builtin_recn(Token **cur, ParseError *err) {

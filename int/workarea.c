@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
 /* ------------------------------------------------------------------ */
 /* CP437 <-> UTF-8 encoding conversion                                */
@@ -434,6 +435,23 @@ int wa_recall_all(void)
     return recall_all(db);
 }
 
+/* Update the DBF header's last-update date to today (MMDDYYYY format) */
+static void update_dbf_date(DATABASEDBF *db)
+{
+    if (!db) return;
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    snprintf(db->date, sizeof(db->date), "%02d%02d%04d",
+             t->tm_mon + 1, t->tm_mday, t->tm_year + 1900);
+    /* Write only the 4-byte date field at header offset 4 */
+    FILE *f = fopen(db->name, "r+b");
+    if (f) {
+        fseek(f, 4, SEEK_SET);
+        fwrite(db->date, 1, 4, f);
+        fclose(f);
+    }
+}
+
 int wa_pack(void)
 {
     DATABASEDBF *db = wa_db();
@@ -456,6 +474,9 @@ int wa_pack(void)
         pack(db);
     }
 
+    /* Update last-update date before re-opening */
+    update_dbf_date(db);
+
     /* Close and re-open to reload header (recnos changed on disk) */
     wa_close(sel);
     wa_use(db_name, sel, custom_aliases[sel]);
@@ -473,7 +494,11 @@ int wa_zap(void)
 
 int wa_append_blank(void)
 {
-    return append_blank(wa_db_ptr());
+    DATABASEDBF *db = wa_db();
+    int rc = append_blank(wa_db_ptr());
+    if (rc == 0 && db)
+        update_dbf_date(db);
+    return rc;
 }
 
 /* ------------------------------------------------------------------ */
@@ -561,6 +586,8 @@ int wa_replace(const char *fieldname, const char *value)
     char *latin1 = utf8_to_cp437(value);
     int rc = replace(db, (char *)fieldname, latin1 ? latin1 : (char *)value);
     free(latin1);
+    if (rc == 0)
+        update_dbf_date(db);
     return rc;
 }
 

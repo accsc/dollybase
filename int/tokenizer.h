@@ -188,6 +188,8 @@ typedef enum {
     KW_MOD,
     KW_MONTH,
     KW_OS,
+    KW_LUPDATE,
+    KW_RECCOUNT,
     KW_RECN,
     KW_RECNO,
     KW_RIGHT_FUNC,        /* RIGHT()                                */

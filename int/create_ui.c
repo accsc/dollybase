@@ -607,11 +607,11 @@ int ui_create(const char *filename)
                 break;
             }
 
-            case 'n' ^ 0x40: /* ^N — Ctrl+N: add new field */
+            case 'n' & 0x1F: /* ^N — Ctrl+N (14): add new field */
                 create_add_field(&cs);
                 break;
 
-            case 'u' ^ 0x40: { /* ^U — Ctrl+U: remove with confirmation */
+            case 'u' & 0x1F: { /* ^U — Ctrl+U (21): remove with confirmation */
                 if (abs_row >= cs.field_count) break;
                 mvaddstr(status_row, 0,
                     "                                                                                         ");

@@ -44,6 +44,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"CLEAR ALL",    KW_CLEAR_ALL},
     {"CLEAR MEMORY", KW_CLEAR_MEMORY},
     {"CLOSE",        KW_CLOSE},
+    {"CREATE",       KW_CREATE},
     {"COLOR",        KW_COLOR},
     {"CONSOLE",      KW_CONSOLE},
     {"CONTINUE",     KW_CONTINUE},

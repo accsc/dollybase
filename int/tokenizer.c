@@ -692,6 +692,22 @@ Token *tokenize(const char *source)
     if (eof_tok)
         append_token(eof_tok, &head, &tail);
 
+    /* Post-process: remove TOK_EOL immediately following TOK_COMMA
+       (trailing comma line continuation — applies to all commands) */
+    {
+        Token *t = head;
+        while (t && t->next) {
+            if (t->type == TOK_COMMA && t->next->type == TOK_EOL) {
+                Token *dead = t->next;
+                t->next = dead->next;
+                free(dead);
+                /* Don't advance — check next token after removed EOL too */
+            } else {
+                t = t->next;
+            }
+        }
+    }
+
     return head;
 }
 

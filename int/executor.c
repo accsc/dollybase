@@ -1921,6 +1921,46 @@ static ExecStatus exec_zap(Token **cur)
 /*   scope = ALL | NEXT n | RECORD n | REST                            */
 /* ------------------------------------------------------------------ */
 
+/* Replacement pair: field name + token range of its expression */
+typedef struct {
+    char fieldname[256];
+    Token *expr_start;
+    Token *expr_end; /* exclusive — one past last token of expression */
+} ReplacePair;
+
+/* Advance scan past one expression, stopping at comma/keyword boundaries.
+   Returns the token just after the expression (comma, FOR, WHILE, EOL, EOF). */
+static Token *skip_expression(Token *scan)
+{
+    int paren_depth = 0;
+    while (scan && !is_eol_or_eof(scan)) {
+        if (scan->type == TOK_LPAREN) paren_depth++;
+        else if (scan->type == TOK_RPAREN) { if (paren_depth > 0) paren_depth--; }
+        else if (paren_depth == 0) {
+            /* Stop at comma (next field pair), FOR, WHILE */
+            if (scan->type == TOK_COMMA) break;
+            if (scan->type == TOK_KEYWORD &&
+                (scan->keyword_id == KW_FOR || scan->keyword_id == KW_WHILE))
+                break;
+        }
+        scan = scan->next;
+    }
+    return scan;
+}
+
+/* Apply all replacement pairs to the current record */
+static void apply_replacements(ReplacePair *pairs, int npairs)
+{
+    for (int i = 0; i < npairs; i++) {
+        Token *rcur = pairs[i].expr_start;
+        ExprValue val = parse_expr(&rcur);
+        char *s = val_to_string(&val);
+        wa_replace(pairs[i].fieldname, s);
+        free(s);
+        free_value(&val);
+    }
+}
+
 static ExecStatus exec_replace(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "REPLACE" */
@@ -1942,7 +1982,7 @@ static ExecStatus exec_replace(Token **cur)
     } else if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT) {
         *cur = (*cur)->next;
         si.scope_next = 1;
-        si.scope_next_start = wa_recno() + 1;
+        si.scope_next_start = wa_recno(); /* NEXT n starts at current record */
         if (*cur && (*cur)->type == TOK_INTEGER) {
             si.scope_next = atoi((*cur)->value);
             *cur = (*cur)->next;
@@ -1963,50 +2003,60 @@ static ExecStatus exec_replace(Token **cur)
         return EXEC_OK;
     }
 
-    char fieldname[256];
-    strncpy(fieldname, (*cur)->value, sizeof(fieldname) - 1);
-    fieldname[sizeof(fieldname) - 1] = '\0';
-    *cur = (*cur)->next;
+    /* Collect all field WITH expression pairs (comma-separated) */
+    ReplacePair pairs[64];
+    int npairs = 0;
 
-    /* Skip "WITH" */
-    if (*cur && (*cur)->type == TOK_KEYWORD &&
-        port_strcasecmp((*cur)->value, "WITH") == 0) {
+    while (*cur && (*cur)->type == TOK_IDENT && npairs < 64) {
+        ReplacePair *p = &pairs[npairs];
+        strncpy(p->fieldname, (*cur)->value, sizeof(p->fieldname) - 1);
+        p->fieldname[sizeof(p->fieldname) - 1] = '\0';
         *cur = (*cur)->next;
-    }
 
-    /* Save the replacement expression token range */
-    Token *repl_start = *cur;
+        /* Skip "WITH" keyword */
+        if (*cur && (*cur)->type == TOK_KEYWORD &&
+            (*cur)->keyword_id == KW_WITH) {
+            *cur = (*cur)->next;
+        }
 
-    /* Parse the expression once to find its end */
-    Token *scan = *cur;
-    int paren_depth = 0;
-    while (scan && !is_eol_or_eof(scan)) {
-        if (scan->type == TOK_LPAREN) paren_depth++;
-        else if (scan->type == TOK_RPAREN) { if (paren_depth > 0) paren_depth--; }
-        else if (paren_depth == 0 &&
-                 scan->type == TOK_KEYWORD &&
-                 (scan->keyword_id == KW_FOR || scan->keyword_id == KW_WHILE))
-            break;
-        scan = scan->next;
-    }
+        p->expr_start = *cur;
 
-    /* Parse FOR/WHILE scope after the replacement expression */
-    if (scan && scan->type == TOK_KEYWORD && scan->keyword_id == KW_FOR) {
-        si.for_start = scan->next;
-        scan = scan->next;
-        paren_depth = 0;
-        while (scan && !is_eol_or_eof(scan)) {
-            if (scan->type == TOK_LPAREN) paren_depth++;
-            else if (scan->type == TOK_RPAREN) { if (paren_depth > 0) paren_depth--; }
-            else if (paren_depth == 0 &&
-                     scan->type == TOK_KEYWORD && scan->keyword_id == KW_WHILE)
-                break;
-            scan = scan->next;
+        /* Advance past the expression to find its end */
+        Token *scan = skip_expression(*cur);
+        p->expr_end = scan;
+        *cur = scan;
+
+        npairs++;
+
+        /* If next token is a comma, skip it and continue to next pair.
+           EOL after comma is already removed by the tokenizer (line continuation). */
+        if (*cur && (*cur)->type == TOK_COMMA) {
+            *cur = (*cur)->next;
         }
     }
 
-    if (scan && scan->type == TOK_KEYWORD && scan->keyword_id == KW_WHILE) {
-        si.while_start = scan->next;
+    if (npairs == 0) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    /* Parse FOR/WHILE scope after all field pairs */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_FOR) {
+        si.for_start = (*cur)->next;
+        /* Advance *cur past the FOR expression to find WHILE or EOL */
+        int paren_depth = 0;
+        while (*cur && !is_eol_or_eof(*cur)) {
+            if ((*cur)->type == TOK_LPAREN) paren_depth++;
+            else if ((*cur)->type == TOK_RPAREN) { if (paren_depth > 0) paren_depth--; }
+            else if (paren_depth == 0 &&
+                     (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_WHILE)
+                break;
+            *cur = (*cur)->next;
+        }
+    }
+
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_WHILE) {
+        si.while_start = (*cur)->next;
     }
 
     skip_to_eol(cur);
@@ -2021,22 +2071,12 @@ static ExecStatus exec_replace(Token **cur)
     if (si.scope_record) {
         /* REPLACE RECORD n */
         gotos(wa_db_ptr(), si.scope_record);
-        Token *rcur = repl_start;
-        ExprValue val = parse_expr(&rcur);
-        char *s = val_to_string(&val);
-        wa_replace(fieldname, s);
-        free(s);
-        free_value(&val);
+        apply_replacements(pairs, npairs);
 
     } else if (si.scope_all) {
         for (int rec = 1; rec <= total; rec++) {
             gotos(wa_db_ptr(), rec);
-            Token *rcur = repl_start;
-            ExprValue val = parse_expr(&rcur);
-            char *s = val_to_string(&val);
-            wa_replace(fieldname, s);
-            free(s);
-            free_value(&val);
+            apply_replacements(pairs, npairs);
         }
 
     } else if (si.scope_next) {
@@ -2054,12 +2094,7 @@ static ExecStatus exec_replace(Token **cur)
                 }
             }
             last_valid_rec = rec;
-            Token *rcur = repl_start;
-            ExprValue val = parse_expr(&rcur);
-            char *s = val_to_string(&val);
-            wa_replace(fieldname, s);
-            free(s);
-            free_value(&val);
+            apply_replacements(pairs, npairs);
         }
         if (last_valid_rec > 0)
             gotos(wa_db_ptr(), last_valid_rec);
@@ -2082,12 +2117,7 @@ static ExecStatus exec_replace(Token **cur)
                 }
             }
             last_valid_rec = rec;
-            Token *rcur = repl_start;
-            ExprValue val = parse_expr(&rcur);
-            char *s = val_to_string(&val);
-            wa_replace(fieldname, s);
-            free(s);
-            free_value(&val);
+            apply_replacements(pairs, npairs);
         }
 
     } else if (si.for_start || si.while_start) {
@@ -2104,21 +2134,12 @@ static ExecStatus exec_replace(Token **cur)
                 continue;
             }
             last_valid_rec = rec;
-            Token *rcur = repl_start;
-            ExprValue val = parse_expr(&rcur);
-            char *s = val_to_string(&val);
-            wa_replace(fieldname, s);
-            free(s);
-            free_value(&val);
+            apply_replacements(pairs, npairs);
         }
 
     } else {
         /* No scope — replace current record only */
-        ExprValue val = parse_expr(&repl_start);
-        char *s = val_to_string(&val);
-        wa_replace(fieldname, s);
-        free(s);
-        free_value(&val);
+        apply_replacements(pairs, npairs);
     }
 
     if (!si.scope_next && !si.scope_rest)

@@ -141,4 +141,7 @@ void ui_print_newline(void);
 /* Returns 0 on normal exit (F3/Escape).                               */
 int  ui_browse(const char *fields);
 
+/* Launch the CREATE DATABASE grid. */
+int  ui_create(const char *filename);
+
 #endif /* _UI_H */

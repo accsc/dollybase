@@ -191,6 +191,7 @@ static ExecStatus exec_at(Token **cur);
 static ExecStatus exec_read(Token **cur);
 static ExecStatus exec_clear(Token **cur);
 static ExecStatus exec_text(Token **cur);
+static ExecStatus exec_create(Token **cur);
 
 /* Block / loop helpers */
 static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2);
@@ -352,6 +353,7 @@ static ExecStatus exec_statement(Token **cur)
             case KW_SKIP:     return exec_skip(cur);
             case KW_USE:      return exec_use(cur);
             case KW_CLOSE:    return exec_close(cur);
+            case KW_CREATE:   return exec_create(cur);
             case KW_GOTOP:    wa_goto_top(); (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_OK;
             case KW_GOBOTTOM: wa_goto_bottom(); (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_OK;
             case KW_GO:       return exec_go(cur);
@@ -3054,5 +3056,48 @@ static ExecStatus exec_continue(Token **cur)
     }
 
     wa_set_found(found);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* CREATE <filename>                                                   */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_create(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "CREATE" */
+
+    /* Expect a filename (identifier or string) */
+    if (!*cur || is_eol_or_eof(*cur)) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    char filename[256] = "";
+    if ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_STRING) {
+        strncpy(filename, (*cur)->value, sizeof(filename) - 1);
+        filename[sizeof(filename) - 1] = '\0';
+        *cur = (*cur)->next;
+    }
+
+    if (filename[0] == '\0') {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    /* Strip .dbf extension if present */
+    size_t len = strlen(filename);
+    if (len >= 4 && strcasecmp(filename + len - 4, ".dbf") == 0) {
+        filename[len - 4] = '\0';
+    }
+
+    skip_to_eol(cur);
+
+    if (ui_is_active()) {
+        ui_create(filename);
+    } else {
+        ui_print("CREATE requires interactive mode");
+    }
+
     return EXEC_OK;
 }

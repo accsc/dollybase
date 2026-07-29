@@ -120,6 +120,17 @@ void ui_get_clear(void);
 void ui_clear(void);
 
 /* ------------------------------------------------------------------ */
+/* @...TO — rectangle drawing                                         */
+/* ------------------------------------------------------------------ */
+
+/* Draw a rectangle from (r1,c1) to (r2,c2).
+   double_line=1 uses double-line chars ('=' and '|'), 0 uses single. */
+void ui_rect(int r1, int c1, int r2, int c2, int double_line);
+
+/* Clear a rectangular region from (r1,c1) to (r2,c2).                 */
+void ui_clear_rect(int r1, int c1, int r2, int c2);
+
+/* ------------------------------------------------------------------ */
 /* Helpers                                                            */
 /* ------------------------------------------------------------------ */
 

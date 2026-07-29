@@ -150,6 +150,81 @@ void ui_clear(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* RECTANGLE — @...TO                                                  */
+/* ------------------------------------------------------------------ */
+
+void ui_rect(int r1, int c1, int r2, int c2, int double_line)
+{
+    if (!ui_active) return;
+    int r, c;
+    char h_char, v_char, tl, tr, bl, br;
+
+    if (double_line) {
+        h_char = '=';
+        v_char = '|';
+        tl = '+'; tr = '+'; bl = '+'; br = '+';
+    } else {
+        h_char = '-';
+        v_char = '|';
+        tl = '+'; tr = '+'; bl = '+'; br = '+';
+    }
+
+    /* Ensure r1<=r2 and c1<=c2 */
+    if (r1 > r2) { int tmp = r1; r1 = r2; r2 = tmp; }
+    if (c1 > c2) { int tmp = c1; c1 = c2; c2 = tmp; }
+
+    /* Top border */
+    mvaddch(r1, c1, tl);
+    for (c = c1 + 1; c < c2; c++)
+        mvaddch(r1, c, h_char);
+    mvaddch(r1, c2, tr);
+
+    /* Bottom border */
+    mvaddch(r2, c1, bl);
+    for (c = c1 + 1; c < c2; c++)
+        mvaddch(r2, c, h_char);
+    mvaddch(r2, c2, br);
+
+    /* Side borders */
+    for (r = r1 + 1; r < r2; r++) {
+        mvaddch(r, c1, v_char);
+        mvaddch(r, c2, v_char);
+    }
+
+    refresh();
+}
+
+/* ------------------------------------------------------------------ */
+/* CLEAR RECT — @...CLEAR [TO @...]                                    */
+/* ------------------------------------------------------------------ */
+
+void ui_clear_rect(int r1, int c1, int r2, int c2)
+{
+    if (!ui_active) return;
+    int r, c;
+    int maxy = getmaxy(stdscr);
+    int maxx = getmaxx(stdscr);
+
+    /* Ensure r1<=r2 and c1<=c2 */
+    if (r1 > r2) { int tmp = r1; r1 = r2; r2 = tmp; }
+    if (c1 > c2) { int tmp = c1; c1 = c2; c2 = tmp; }
+
+    /* Clamp to screen bounds */
+    if (r2 >= maxy) r2 = maxy - 1;
+    if (c2 >= maxx) c2 = maxx - 1;
+    if (r1 < 0) r1 = 0;
+    if (c1 < 0) c1 = 0;
+
+    for (r = r1; r <= r2; r++) {
+        for (c = c1; c <= c2; c++) {
+            mvaddch(r, c, ' ');
+        }
+    }
+
+    refresh();
+}
+
+/* ------------------------------------------------------------------ */
 /* ? — free-form print at cursor                                       */
 /* ------------------------------------------------------------------ */
 
@@ -378,7 +453,36 @@ void ui_read(void)
     while (gf) {
         const char *buf = field_buffer(gf->field, 0);
         if (buf && gf->varname[0]) {
-            vars_set_str(gf->varname, buf);
+            /* Trim trailing spaces from field buffer (ncurses pads with spaces) */
+            char buf_trimmed[256];
+            strncpy(buf_trimmed, buf, sizeof(buf_trimmed) - 1);
+            buf_trimmed[sizeof(buf_trimmed) - 1] = '\0';
+            {
+                char *p = buf_trimmed + strlen(buf_trimmed) - 1;
+                while (p >= buf_trimmed && *p == ' ') *p-- = '\0';
+            }
+
+            /* Preserve existing variable type if possible */
+            ExprValue existing = vars_get(gf->varname);
+            if (existing.type == VAL_REAL || existing.type == VAL_INTEGER) {
+                /* Variable was numeric — try to parse as number */
+                char *endptr = NULL;
+                double dval = strtod(buf_trimmed, &endptr);
+                if (endptr && *endptr == '\0' && buf_trimmed[0] != '\0') {
+                    /* Successfully parsed as number */
+                    ExprValue v = val_real(dval);
+                    vars_set(gf->varname, &v);
+                    free_value(&v);
+                } else {
+                    /* Fallback to string */
+                    vars_set_str(gf->varname, buf_trimmed);
+                }
+                free_value(&existing);
+            } else {
+                /* Variable is string or doesn't exist — store as string */
+                vars_set_str(gf->varname, buf_trimmed);
+                free_value(&existing);
+            }
         }
         gf = gf->next;
     }

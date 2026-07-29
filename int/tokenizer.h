@@ -159,6 +159,7 @@ typedef enum {
     KW_CTOD,
     KW_DATE,              /* DATE() function                        */
     KW_DAY,
+    KW_DOUBLE,
     KW_DMY,
     KW_DTOC,
     KW_EMPTY,
@@ -189,12 +190,14 @@ typedef enum {
     KW_SPACE,
     KW_SUBSTR,
     KW_STUFF,
+    KW_STORE,
     KW_SUM,
     KW_TYPE,
     KW_UPPER,
     KW_TEXT,
     KW_TIME,
     KW_TRIM,
+    KW_TO,
     KW_VAL,
     KW_YEAR,
 

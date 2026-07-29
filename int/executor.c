@@ -167,6 +167,7 @@ static ExecStatus exec_return(Token **cur);
 static ExecStatus exec_parameters(Token **cur);
 static ExecStatus exec_set(Token **cur);
 static ExecStatus exec_skip(Token **cur);
+static ExecStatus exec_store(Token **cur);
 static ExecStatus exec_use(Token **cur);
 static ExecStatus exec_close(Token **cur);
 static ExecStatus exec_go(Token **cur);
@@ -351,6 +352,7 @@ static ExecStatus exec_statement(Token **cur)
             case KW_LOOP:     (*cur) = (*cur)->next; skip_to_eol(cur); return EXEC_LOOP;
             case KW_SET:      return exec_set(cur);
             case KW_SKIP:     return exec_skip(cur);
+            case KW_STORE:    return exec_store(cur);
             case KW_USE:      return exec_use(cur);
             case KW_CLOSE:    return exec_close(cur);
             case KW_CREATE:   return exec_create(cur);
@@ -2534,9 +2536,50 @@ static ExecStatus exec_select(Token **cur)
 }
 
 /* ------------------------------------------------------------------ */
+/* STORE <expr> TO <var1>, <var2>, ...                                 */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_store(Token **cur)
+{
+    Token *t = *cur;
+    t = t->next; /* skip "STORE" */
+
+    /* Parse the expression to store */
+    ExprValue val = parse_expr(&t);
+
+    /* Expect TO keyword */
+    if (!t || t->type != TOK_KEYWORD || t->keyword_id != KW_TO) {
+        free_value(&val);
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+    t = t->next; /* skip "TO" */
+
+    /* Assign to each variable in the comma-separated list */
+    while (t && !is_eol_or_eof(t)) {
+        if (t->type == TOK_IDENT) {
+            vars_set(t->value, &val);
+            t = t->next;
+            /* Skip comma if present */
+            if (t && t->type == TOK_COMMA) {
+                t = t->next;
+            }
+        } else {
+            break;
+        }
+    }
+
+    free_value(&val);
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
 /* @ row,col SAY <expr>                                                */
 /* @ row,col GET <var> [PICTURE "mask"] [RANGE lo,hi] [VALID expr]     */
 /*             [DEFAULT expr] [FOCUS]                                  */
+/* @ row1,col1 TO @ row2,col2 [DOUBLE]                                 */
+/* @ row1,col1 CLEAR [TO @ row2,col2]                                  */
 /* ------------------------------------------------------------------ */
 
 static ExecStatus exec_at(Token **cur)
@@ -2562,8 +2605,74 @@ static ExecStatus exec_at(Token **cur)
     int col = (int)val_to_double(&col_val);
     free_value(&col_val);
 
-    /* Expect SAY or GET */
+    /* Expect SAY, GET, TO, or CLEAR */
     if (!rcur || rcur->type != TOK_KEYWORD) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    /* @...TO @... — draw rectangle */
+    if (rcur->keyword_id == KW_TO) {
+        rcur = rcur->next; /* skip "TO" */
+        /* Expect "@" */
+        if (rcur && rcur->type == TOK_AT) {
+            rcur = rcur->next; /* skip "@" */
+        }
+        /* Parse row2 */
+        ExprValue row2_val = parse_expr(&rcur);
+        int row2 = (int)val_to_double(&row2_val);
+        free_value(&row2_val);
+        /* Expect comma */
+        if (rcur && rcur->type == TOK_COMMA) {
+            rcur = rcur->next;
+        }
+        /* Parse col2 */
+        ExprValue col2_val = parse_expr(&rcur);
+        int col2 = (int)val_to_double(&col2_val);
+        free_value(&col2_val);
+
+        /* Check for optional DOUBLE */
+        int double_line = 0;
+        if (rcur && rcur->type == TOK_KEYWORD && rcur->keyword_id == KW_DOUBLE) {
+            double_line = 1;
+        }
+
+        ui_rect(row, col, row2, col2, double_line);
+        ui_refresh();
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    /* @...CLEAR [TO @...] — clear region */
+    if (rcur->keyword_id == KW_CLEAR) {
+        rcur = rcur->next; /* skip "CLEAR" */
+        /* Check for optional "TO @" */
+        if (rcur && rcur->type == TOK_KEYWORD && rcur->keyword_id == KW_TO) {
+            rcur = rcur->next; /* skip "TO" */
+            /* Expect "@" */
+            if (rcur && rcur->type == TOK_AT) {
+                rcur = rcur->next; /* skip "@" */
+            }
+            /* Parse row2 */
+            ExprValue row2_val = parse_expr(&rcur);
+            int row2 = (int)val_to_double(&row2_val);
+            free_value(&row2_val);
+            /* Expect comma */
+            if (rcur && rcur->type == TOK_COMMA) {
+                rcur = rcur->next;
+            }
+            /* Parse col2 */
+            ExprValue col2_val = parse_expr(&rcur);
+            int col2 = (int)val_to_double(&col2_val);
+            free_value(&col2_val);
+            ui_clear_rect(row, col, row2, col2);
+        } else {
+            /* Clear from (row,col) to bottom-right of screen */
+            int maxy = LINES - 1;
+            int maxx = COLS - 1;
+            ui_clear_rect(row, col, maxy, maxx);
+        }
+        ui_refresh();
         skip_to_eol(cur);
         return EXEC_OK;
     }
@@ -2626,17 +2735,24 @@ static ExecStatus exec_at(Token **cur)
                     case KW_RANGE:
                         rcur = rcur->next; /* skip "RANGE" */
                         {
-                            ExprValue lo_val = parse_expr(&rcur);
-                            char lo_str[64];
-                            snprintf(lo_str, sizeof(lo_str), "%g", val_to_double(&lo_val));
-                            free_value(&lo_val);
-                            /* Skip comma */
+                            char lo_str[64] = "";
+                            char hi_str[64] = "";
+
+                            /* Optional low bound — skip if next token is comma */
+                            if (rcur && !is_eol_or_eof(rcur) && rcur->type != TOK_COMMA) {
+                                ExprValue lo_val = parse_expr(&rcur);
+                                snprintf(lo_str, sizeof(lo_str), "%g", val_to_double(&lo_val));
+                                free_value(&lo_val);
+                            }
+                            /* Skip comma if present */
                             if (rcur && rcur->type == TOK_COMMA)
                                 rcur = rcur->next;
-                            ExprValue hi_val = parse_expr(&rcur);
-                            char hi_str[64];
-                            snprintf(hi_str, sizeof(hi_str), "%g", val_to_double(&hi_val));
-                            free_value(&hi_val);
+                            /* Optional high bound — skip if at EOL/EOF or next keyword */
+                            if (rcur && !is_eol_or_eof(rcur) && rcur->type != TOK_KEYWORD) {
+                                ExprValue hi_val = parse_expr(&rcur);
+                                snprintf(hi_str, sizeof(hi_str), "%g", val_to_double(&hi_val));
+                                free_value(&hi_val);
+                            }
                             ui_get_set_range(lo_str, hi_str);
                         }
                         break;

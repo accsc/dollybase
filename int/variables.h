@@ -1,5 +1,5 @@
 /*
- * variables.h — dBase III Plus variable store
+ * variables.h — dollybase variable store
  *
  * Simple hash-table-like store: case-insensitive name → ExprValue.
  * Replaces the old memo.c (which stored only raw strings).

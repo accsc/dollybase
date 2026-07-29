@@ -1,5 +1,5 @@
 /*
- * tokenizer.c — dBase III Plus lexer implementation
+ * tokenizer.c — dollybase lexer implementation
  *
  * Single-pass character scanner that produces a linked list of tokens.
  */

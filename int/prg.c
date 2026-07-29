@@ -1,5 +1,5 @@
 /*
- * prg.c — dBase III Plus .PRG interpreter
+ * prg.c — dollybase .PRG interpreter
  *
  * Usage:
  *   prg [file.prg]     Run a .prg file

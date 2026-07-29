@@ -1,5 +1,5 @@
 /*
- * tokenizer.h — dBase III Plus lexer
+ * tokenizer.h — dollybase lexer
  *
  * Character-by-character scanner that produces a typed linked list of tokens.
  * No global state: tokenize(source) returns the head of the token list.

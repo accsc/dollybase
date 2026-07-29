@@ -103,7 +103,7 @@ return fin;
 }
 
 /* ------------------------------------------------------------------ */
-/* B-tree descent for NDX (dBase III+ native index, 512-byte pages)    */
+/* B-tree descent for NDX (native index, 512-byte pages)               */
 /* Returns FOUND with recno set to the matching DBF record, or 0.      */
 /* ------------------------------------------------------------------ */
 

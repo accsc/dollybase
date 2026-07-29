@@ -1,5 +1,5 @@
 /*
- * parser.h — dBase III Plus recursive descent expression evaluator
+ * parser.h — dollybase recursive descent expression evaluator
  *
  * Operates on a token list produced by the tokenizer.
  * Takes a Token** cursor; advances it past consumed tokens.

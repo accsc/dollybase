@@ -1,5 +1,5 @@
 /*
- * ui.h — ncurses UI layer for dBASE III Plus interpreter
+ * ui.h — ncurses UI layer for dollybase interpreter
  *
  * Provides screen I/O: @...SAY, @...GET, READ, CLEAR, BROWSE, EDIT, MENU.
  * Only active when ncurses is initialized (interactive mode).

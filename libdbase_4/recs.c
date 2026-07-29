@@ -574,7 +574,7 @@ int replace_dbt_block(char *_na, int block, char *content)
 		for( i = strlen(content); i <= 509; ++i)
 			fputc(0x00,dbt_file);
 		
-		fputc(0x1A,dbt_file); /* Two for dBase III */
+		fputc(0x1A,dbt_file); /* Two EOF markers for DBT */
 		fputc(0x1A,dbt_file);
 	}else{ 
 #ifdef DEBUG

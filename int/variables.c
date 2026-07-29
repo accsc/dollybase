@@ -1,5 +1,5 @@
 /*
- * variables.c — dBase III Plus variable store implementation
+ * variables.c — dollybase variable store implementation
  *
  * Fixed-size array of (name, ExprValue) pairs. Case-insensitive lookup.
  */

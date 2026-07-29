@@ -1,5 +1,5 @@
 /*
- * ui.c — ncurses UI layer for dBASE III Plus interpreter
+ * ui.c — ncurses UI layer for dollybase interpreter
  *
  * Implements @...SAY, @...GET, READ, CLEAR using ncurses + libform.
  */

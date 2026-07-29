@@ -167,7 +167,7 @@ static void test_create_with_memo(void)
     /* Verify tipo is set correctly when we use() the database */
     DATABASEDBF *asp = malloc(sizeof(DATABASEDBF));
     use("memo_test.dbf", &asp);
-    ASSERT_EQ_INT(3, asp->tipo); /* tipo 3 = dBase III with DBT */
+    ASSERT_EQ_INT(3, asp->tipo); /* tipo 3 = DBT memo */
     free(asp);
 
     cleanup("memo_test");

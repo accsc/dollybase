@@ -305,7 +305,7 @@ int wa_pack(void)
     int saved_rec = db->current;
     int sel = wa_get_selected();
 
-    /* If database has a DBT file (tipo 3 = dBase III+ DBT, tipo 4 = dBase IV DBT),
+    /* If database has a DBT file (tipo 3 = DBT memo, tipo 4 = DBT memo),
      * use the DBT-aware pack function */
     if (db->tipo == 3 || db->tipo == 4) {
         char dbt_name[1024];

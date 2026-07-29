@@ -1,5 +1,5 @@
 /*
- * executor.c — dBase III Plus statement executor
+ * executor.c — dollybase statement executor
  *
  * Walks a token list and dispatches statements: IF/ELSE/ENDIF, DO WHILE/ENDDO,
  * FOR/ENDFOR, assignment, ?, RETURN, SET, SKIP, USE, GO TOP/BOTTOM.

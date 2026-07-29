@@ -1,5 +1,5 @@
 /*
- * executor.h — dBase III Plus statement executor
+ * executor.h — dollybase statement executor
  *
  * Walks a token list (produced by tokenize()) and dispatches statements.
  * Supports PROCEDURE definitions, DO <name> calls, and RETURN.

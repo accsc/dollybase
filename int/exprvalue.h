@@ -1,5 +1,5 @@
 /*
- * exprvalue.h — dBase III Plus expression value type system
+ * exprvalue.h — dollybase expression value type system
  *
  * Represents a typed runtime value: integer, real, string, date, logical, or null.
  * Provides constructors, comparison, coercion, and formatting helpers.

@@ -72,7 +72,7 @@ if ( (header = (char *) malloc (34)) == NULL )
 	}
 /***************************** Head stuff *********************************/
 
-	header[0] = has_memo ? 0x83 : 0x03; /* 0x83 = dBase III with DBT memo */
+	header[0] = has_memo ? 0x83 : 0x03; /* 0x83 = DBF with DBT memo */
 	header[1] = year;  /* Ex: 0 for 2000 or 7 for 2007 */
 	header[2] = month; /* 1-12 */
 	header[3] = day; /* 1-31 */
@@ -87,7 +87,7 @@ if ( (header = (char *) malloc (34)) == NULL )
 	for( contador = 8; contador <=32; contador++)
 		header[contador] = 0x00;
 	
-	/* Added by dBase III ???? */
+	/* DBF header padding bytes */
 	header[8] = 0xE1;
 	header[10] = 0x87; 
 	
@@ -216,7 +216,7 @@ dbt_ahead[3] = 0x00;
 for( i = 4; i<=511; ++i)
 	dbt_ahead[i] = 0x00;
 		
-dbt_ahead[16] = 0x03; /* Version of dBase III+ */
+dbt_ahead[16] = 0x03; /* DBT version byte */
 
 /********************* End of First block stuff **********************/
 

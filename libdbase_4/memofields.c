@@ -62,7 +62,7 @@ int get_db4_memo_block(char *_fname, int nblock, char *result, int max)
 	if ( fgetc(finput) + (fgetc(finput)*256) == 1)
 	{
 #ifdef DEBUG
-		fprintf(stderr,"Warning: Block lenght = 1, prabably DBIII memo field. Use DBIII function instead DB IV function.\n");
+		fprintf(stderr,"Warning: Block length = 1, probably DBF3 memo field. Use DBF3 function instead DBF4 function.\n");
 		fflush(stderr);
 		free(name);
 

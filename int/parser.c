@@ -1,5 +1,5 @@
 /*
- * parser.c — dBase III Plus recursive descent expression evaluator
+ * parser.c — dollybase recursive descent expression evaluator
  *
  * Walks a token list produced by tokenize(), evaluates expressions,
  * and returns typed ExprValue results.

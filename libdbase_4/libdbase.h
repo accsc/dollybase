@@ -5,7 +5,7 @@
 	By Alvaro Cortés. (accsc@arbornet.org) 
 	libdollybase. A library to use dbase files, like dbf and mem files
 	and a completly memory and library functions similar to
-	DBase III plus (tm).
+	dBASE-compatible xBase syntax.
 	
 	To develop with libdollybase YOU MUST include this file in your app.
 

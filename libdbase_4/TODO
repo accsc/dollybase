@@ -26,8 +26,8 @@ TODO list for release libdbase 0.3.2
 
 --------------------------- Tests ---------------------------------
 
-- Test DBIII compatibility with other xBase programs. (Tested only with dBase III, FOXPRO 1.x/2.0 Test Failed Dont read database...Fix it!!!!)
+- Test DBF3 compatibility with other xBase programs. (Tested only with native DBF, FOXPRO 1.x/2.0 Test Failed Dont read database...Fix it!!!!)
   * Probably some space character problems.
 - Test DBII create database function. (Actually Untested).
   * Get dBase II where you can ...
-- DollyBASE can read FOXPRO and DBIII databases.
+- DollyBASE can read FOXPRO and DBF3 databases.

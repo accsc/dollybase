@@ -73,6 +73,7 @@ typedef enum {
     /* Database commands */
     KW_ALL,
     KW_ALIAS,
+    KW_DBF,
     KW_NEXT,
     KW_RECORD,
     KW_REST,

@@ -76,6 +76,7 @@ static ExprValue builtin_recn(Token **cur, ParseError *err);
 static ExprValue builtin_eof(Token **cur, ParseError *err);
 static ExprValue builtin_bof(Token **cur, ParseError *err);
 static ExprValue builtin_alias(Token **cur, ParseError *err);
+static ExprValue builtin_dbf(Token **cur, ParseError *err);
 static ExprValue builtin_deleted(Token **cur, ParseError *err);
 static ExprValue builtin_found(Token **cur, ParseError *err);
 static ExprValue builtin_sign(Token **cur, ParseError *err);
@@ -710,6 +711,7 @@ static const FuncEntry func_table[] = {
     { KW_ABS,       builtin_abs },
     { KW_ALLTRIM,   builtin_alltrim },
     { KW_ALIAS,     builtin_alias },
+    { KW_DBF,       builtin_dbf },
     { KW_ASC,       builtin_asc },
     { KW_AT_FUNC,   builtin_at_func },
     { KW_BETWEEN,   builtin_between },
@@ -1480,6 +1482,16 @@ static ExprValue builtin_alias(Token **cur, ParseError *err) {
     char *name = wa_dbf_name();
     ExprValue res = val_string(name ? name : "");
     free(name);
+    return res;
+}
+
+static ExprValue builtin_dbf(Token **cur, ParseError *err) {
+    (void)cur; (void)err;
+    /* DBF() returns the full database name WITH extension for the current workarea */
+    DATABASEDBF *db = wa_db();
+    if (!db || !*db->name)
+        return val_string("");
+    ExprValue res = val_string(db->name);
     return res;
 }
 

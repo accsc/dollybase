@@ -5,7 +5,7 @@
  *	PostreSQL import module
  *
  *
- * 	(C) 2005. Alvaro Cortes. accsc@arbornet.org
+ * 	(C) 2005. Alvaro Cortes. alvarocortesc@gmail.com
  *
  *	This is a part of LibdollyBASE. it's under de same license
  *

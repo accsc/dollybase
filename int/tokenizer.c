@@ -51,6 +51,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"CTOD",         KW_CTOD},
     {"DATE",         KW_DATE},
     {"DAY",          KW_DAY},
+    {"DBF",          KW_DBF},
     {"DEFAULT",      KW_DEFAULT},
     {"DELETE",       KW_DELETE},
     {"DELETED",      KW_DELETED},
@@ -584,6 +585,13 @@ Token *tokenize(const char *source)
 
         if (at_line_start && c == '*') {
             /* Line comment: consume to end of line */
+            consume_to_eol(&pos, &line);
+            at_line_start = 0;
+            continue;
+        }
+
+        if (at_line_start && c == '&' && *(pos + 1) == '&') {
+            /* && comment at line start: consume to end of line */
             consume_to_eol(&pos, &line);
             at_line_start = 0;
             continue;

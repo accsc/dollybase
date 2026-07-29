@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "tokenizer.h"
 #include "parser.h"
@@ -87,6 +88,26 @@ static char *read_stdin(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Splash screen — shown before program execution                      */
+/* ------------------------------------------------------------------ */
+
+static void show_splash(void)
+{
+    time_t now = time(NULL);
+    struct tm *lt = localtime(&now);
+    char date_str[32], time_str[32];
+    strftime(date_str, sizeof(date_str), "%d/%m/%Y", lt);
+    strftime(time_str, sizeof(time_str), "%H:%M:%S", lt);
+
+    clear();
+    mvaddstr(1, 0, "DOLLYBASE Version 0.5 - ");
+    mvaddstr(1, 22, date_str);
+    mvaddstr(1, 34, time_str);
+    mvaddstr(2, 0, "by Alvaro Cortes <alvarocortesc@gmail.com> - GPLv2");
+    refresh();
+}
+
+/* ------------------------------------------------------------------ */
 
 int main(int argc, char *argv[])
 {
@@ -115,6 +136,9 @@ int main(int argc, char *argv[])
 
     /* Initialize ncurses — always needed for @...SAY/GET/READ/CLEAR */
     ui_init();
+
+    /* Show splash screen before execution */
+    show_splash();
 
     Token *tokens = tokenize(source);
     free(source);

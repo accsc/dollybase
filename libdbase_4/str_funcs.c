@@ -2,7 +2,7 @@
  *
  *
  *  (C) Alvaro Cortés. 2004.
- *  accsc@arbornet.org  
+ *  alvarocortesc@gmail.com  
  *
  *
  *  Under GPL licence. NO WARRANTY. Use UNDER YOUR OWN RISK.

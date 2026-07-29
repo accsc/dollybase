@@ -707,7 +707,9 @@ int ui_create(const char *filename)
                 int month = tm_info->tm_mon + 1;
                 int year = tm_info->tm_year % 100;
 
-                int rc = create_database(cs.filename, day, month, year, db, 0);
+                char dbf_name[512];
+                snprintf(dbf_name, sizeof(dbf_name), "%s.dbf", cs.filename);
+                int rc = create_database(dbf_name, day, month, year, db, 0);
                 free(db);
 
                 if (rc != 0) {

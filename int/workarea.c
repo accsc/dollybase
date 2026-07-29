@@ -4,6 +4,7 @@
 #include <string.h>
 #include <strings.h>
 #include <time.h>
+#include <ctype.h>
 
 /* ------------------------------------------------------------------ */
 /* CP437 <-> UTF-8 encoding conversion                                */

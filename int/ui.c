@@ -136,7 +136,8 @@ void ui_print(const char *text)
 void ui_print_newline(void)
 {
     if (!ui_active) return;
-    mvaddstr(getcury(stdscr), getcurx(stdscr), "\n");
+    addch('\n');
+    refresh();
 }
 
 /* ------------------------------------------------------------------ */

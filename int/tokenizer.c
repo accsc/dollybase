@@ -102,8 +102,8 @@ static const KeywordEntry KEYWORDS[] = {
     {"MULTILOCKS",   KW_MULTILOCKS},
     {"NEXT",         KW_NEXT},
     {"NOT",          KW_NOT},
-    {"OTHERWISE",    KW_OTHERWISE},
     {"OR",           KW_OR},
+    {"OTHERWISE",    KW_OTHERWISE},
     {"PACK",         KW_PACK},
     {"PARAMETERS",   KW_PARAMETERS},
     {"PICTURE",      KW_PICTURE},
@@ -309,6 +309,37 @@ static void scan_string_literal(const char **pos, Token **out, int line)
     buf[j] = '\0';
 
     if (**pos == '"')
+        (*pos)++;  /* skip closing quote */
+
+    *out = make_token(TOK_STRING, buf, line);
+}
+
+static void scan_string_literal_sq(const char **pos, Token **out, int line)
+{
+    /* pos points at opening '\'' — single-quoted string (dBASE style) */
+    (*pos)++;  /* skip opening quote */
+
+    char buf[256];
+    size_t j = 0;
+
+    while (**pos) {
+        if (**pos == '\n')
+            break;
+        if (**pos == '\'' && (*pos)[1] == '\'') {
+            buf[j++] = '\'';
+            (*pos) += 2;
+        } else if (**pos == '\'') {
+            break;
+        } else {
+            buf[j++] = **pos;
+            (*pos)++;
+        }
+        if (j >= 254)
+            break;
+    }
+    buf[j] = '\0';
+
+    if (**pos == '\'')
         (*pos)++;  /* skip closing quote */
 
     *out = make_token(TOK_STRING, buf, line);
@@ -554,6 +585,10 @@ Token *tokenize(const char *source)
             scan_string_literal(&pos, &tok, line);
             break;
 
+        case '\'':
+            scan_string_literal_sq(&pos, &tok, line);
+            break;
+
         case '{':
             scan_date_literal(&pos, &tok, line);
             break;
@@ -610,7 +645,8 @@ Token *tokenize(const char *source)
             } else if (c == '?' || c == '!' ||
                        c == '+' || c == '-' || c == '*' ||
                        c == '/' || c == '%' || c == '^' ||
-                       c == '=' || c == '<' || c == '>') {
+                       c == '=' || c == '<' || c == '>' ||
+                       c == '$') {
                 scan_operator(&pos, &tok, line);
             } else if (c == '\n') {
                 tok = make_token(TOK_EOL, "\n", line);
@@ -641,7 +677,8 @@ Token *tokenize(const char *source)
 
         if (tok) {
             append_token(tok, &head, &tail);
-            at_line_start = 0;
+            if (tok->type != TOK_EOL)
+                at_line_start = 0;
         }
     }
 

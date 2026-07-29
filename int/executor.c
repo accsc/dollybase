@@ -1824,7 +1824,9 @@ static ExecStatus exec_text(Token **cur)
         if ((*cur)->type == TOK_STRING) {
             expand_macros((*cur)->value, expanded, sizeof(expanded));
             if (ui_is_active()) {
-                printw("%s\n", expanded);
+                addstr(expanded);
+                refresh();
+                addch('\n');
                 refresh();
             } else {
                 printf("%s\n", expanded);

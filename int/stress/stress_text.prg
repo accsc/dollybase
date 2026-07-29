@@ -30,4 +30,3 @@ ENDTEXT
 * --- Verify execution continues after TEXT ---
 ? "After all TEXT blocks"
 
-QUIT

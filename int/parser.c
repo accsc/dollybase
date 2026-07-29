@@ -1646,12 +1646,14 @@ static ExprValue builtin_lupdate(Token **cur, ParseError *err) {
     char *datestr = NULL;
     lupdate(wa_db(), &datestr);
     if (datestr && strlen(datestr) >= 8) {
-        /* DBF stores date as MMDDYYYY, convert to YYYY-MM-DD */
+        /* Library stores date as DD/M/YYYY or DD/MM/YYYY with slashes */
+        int d, m, y;
         char buf[12];
-        snprintf(buf, sizeof(buf), "%c%c%c%c-%c%c-%c%c",
-                 datestr[4], datestr[5], datestr[6], datestr[7],
-                 datestr[0], datestr[1],
-                 datestr[2], datestr[3]);
+        if (sscanf(datestr, "%d/%d/%d", &d, &m, &y) == 3) {
+            snprintf(buf, sizeof(buf), "%04d-%02d-%02d", y, m, d);
+        } else {
+            snprintf(buf, sizeof(buf), "0000-00-00");
+        }
         free(datestr);
         return val_date(buf);
     }

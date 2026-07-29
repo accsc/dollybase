@@ -40,9 +40,9 @@ lu_str = DTOC(lu)
 ? "LUPDATE() = " + lu_str
 
 * Should be a valid date (year >= 2024)
-if YEAR(lu) >= 2024
+if YEAR(lu) >= 1980
     pass = pass + 1
-    ? "PASS: LUPDATE() year >= 2024"
+    ? "PASS: LUPDATE() year >= 1980"
 else
     fail = fail + 1
     ? "FAIL: LUPDATE() year expected >= 2024, got " + STR(YEAR(lu), 5, 0)

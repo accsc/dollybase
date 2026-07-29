@@ -54,7 +54,7 @@ RECALL
 DELETE FOR A->AN_EDICION >= 2000
 ? "Test 6 - DELETE FOR: done"
 GO TOP
-DO WHILE NOT EOF()
+DO WHILE .NOT. EOF()
   IF DELETED()
     ? "Test 6a - deleted rec:", RECNO()
   ENDIF
@@ -83,7 +83,7 @@ GO BOTTOM
 DELETE FOR A->AN_EDICION >= 1950 WHILE RECNO() <= 5
 ? "Test 9 - DELETE FOR..WHILE (rec<=5): done"
 GO TOP
-DO WHILE NOT EOF()
+DO WHILE .NOT. EOF()
   IF DELETED()
     ? "Test 9a - deleted rec:", RECNO()
   ENDIF
@@ -98,7 +98,7 @@ DELETE FOR A->AN_EDICION >= 1990
 RECALL FOR A->AN_EDICION >= 2000
 ? "Test 10 - RECALL FOR: done"
 GO TOP
-DO WHILE NOT EOF()
+DO WHILE .NOT. EOF()
   IF DELETED()
     ? "Test 10a - still deleted rec:", RECNO()
   ENDIF
@@ -119,7 +119,7 @@ SKIP 2
 DELETE NEXT 3
 ? "Test 11a - after DELETE NEXT 3: RECNO=", RECNO()
 GO TOP
-DO WHILE NOT EOF()
+DO WHILE .NOT. EOF()
   IF DELETED()
     ? "Test 11b - deleted rec:", RECNO()
   ENDIF
@@ -160,7 +160,7 @@ SKIP 2
 DELETE NEXT 5 FOR A->AN_EDICION >= 1990
 ? "Test 14 - DELETE NEXT 5 FOR: done"
 GO TOP
-DO WHILE NOT EOF()
+DO WHILE .NOT. EOF()
   IF DELETED()
     ? "Test 14a - deleted rec:", RECNO()
   ENDIF

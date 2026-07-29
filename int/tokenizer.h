@@ -61,7 +61,6 @@ typedef enum {
     KW_IF,
     KW_LABEL,
     KW_LOOP,
-    KW_ENDFOR,
     KW_ENDTEXT,
     KW_OR,
     KW_OTHERWISE,
@@ -187,6 +186,7 @@ typedef enum {
     KW_ROUND,
     KW_RTRIM,
     KW_SIGN,
+    KW_STR,
     KW_SQRT,
     KW_SPACE,
     KW_SUBSTR,
@@ -201,9 +201,6 @@ typedef enum {
     KW_TO,
     KW_VAL,
     KW_YEAR,
-
-    /* Logical operators as keywords (when used in expressions) */
-    KW_NOT,
 
     /* SET command keyword */
     KW_SET,

@@ -161,7 +161,6 @@ static void skip_to_eol(Token **cur);
 static ExecStatus exec_if(Token **cur);
 static ExecStatus exec_do_while(Token **cur);
 static ExecStatus exec_do_case(Token **cur);
-static ExecStatus exec_for(Token **cur);
 static ExecStatus exec_do_call(Token **cur);
 static ExecStatus exec_return(Token **cur);
 static ExecStatus exec_parameters(Token **cur);
@@ -198,7 +197,6 @@ static ExecStatus exec_create(Token **cur);
 static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2);
 static void skip_block_nested(Token **cur, KeywordId end_kw, KeywordId else_kw);
 static ExecStatus exec_do_body(Token **cur);
-static ExecStatus exec_for_body(Token **cur);
 static ExecStatus execute_tokens_from(Token **cur);
 
 /* ------------------------------------------------------------------ */
@@ -343,7 +341,7 @@ static ExecStatus exec_statement(Token **cur)
         switch (t->keyword_id) {
             case KW_IF:       return exec_if(cur);
             case KW_DO:       return exec_do_while(cur);
-            case KW_FOR:      return exec_for(cur);
+            case KW_FOR:      skip_to_eol(cur); return EXEC_OK;
             case KW_RETURN:     return exec_return(cur);
             case KW_PARAMETERS: return exec_parameters(cur);
             case KW_CANCEL:     (*cur) = (*cur)->next; return EXEC_CANCEL;
@@ -770,7 +768,6 @@ static void skip_block_nested(Token **cur, KeywordId end_kw, KeywordId else_kw)
                        (*cur)->keyword_id == KW_ENDIF ||
                        (*cur)->keyword_id == KW_ENDDO ||
                        (*cur)->keyword_id == KW_ENDCASE ||
-                       (*cur)->keyword_id == KW_ENDFOR ||
                        (else_kw && (*cur)->keyword_id == else_kw)) {
                 depth--;
                 if (depth <= 0) break;
@@ -1030,141 +1027,6 @@ static ExecStatus exec_do_case(Token **cur)
 }
 
 /* ------------------------------------------------------------------ */
-/* FOR / ENDFOR                                                        */
-/* ------------------------------------------------------------------ */
-
-static ExecStatus exec_for(Token **cur)
-{
-    /* FOR <var> = <start> TO <end> [STEP <step>] */
-    *cur = (*cur)->next; /* skip "FOR" */
-
-    if (!*cur || (*cur)->type != TOK_IDENT) {
-        skip_to_eol(cur);
-        return EXEC_OK;
-    }
-    char varname[256];
-    strncpy(varname, (*cur)->value, sizeof(varname) - 1);
-    varname[sizeof(varname) - 1] = '\0';
-    *cur = (*cur)->next; /* skip variable name */
-
-    /* Skip '=' or ':=' */
-    if (*cur && (*cur)->type == TOK_OP_COMPARISON && strcmp((*cur)->value, "=") == 0) {
-        *cur = (*cur)->next;
-    } else if (*cur && (*cur)->type == TOK_ASSIGN) {
-        *cur = (*cur)->next;
-    }
-
-    ExprValue start_val = parse_expr(cur);
-    double start_d = val_to_double(&start_val);
-    free_value(&start_val);
-
-    /* Skip "TO" — it may be an ident or keyword depending on tokenizer */
-    if (*cur && (*cur)->type == TOK_IDENT && port_strcasecmp((*cur)->value, "to") == 0) {
-        *cur = (*cur)->next;
-    } else if (*cur && match_keyword(cur, KW_STEP)) {
-        /* STEP used as TO? fallback */
-    }
-
-    ExprValue end_val = parse_expr(cur);
-    double end_d = val_to_double(&end_val);
-    free_value(&end_val);
-
-    double step = 1.0;
-    if (*cur && match_keyword(cur, KW_STEP)) {
-        ExprValue sv = parse_expr(cur);
-        step = val_to_double(&sv);
-        free_value(&sv);
-    }
-
-    /* Skip EOL after FOR header so the body starts at the next real token */
-    if (*cur && (*cur)->type == TOK_EOL)
-        *cur = (*cur)->next;
-
-    /* Save body start for re-execution on each iteration */
-    Token *for_body_start = *cur;
-
-    /* Initialize loop variable */
-    { ExprValue v = val_real(start_d); vars_set(varname, &v); }
-
-    double cur_val = start_d;
-    while (1) {
-        int done = 0;
-        if (step > 0 && cur_val > end_d + 0.0001) done = 1;
-        if (step < 0 && cur_val < end_d - 0.0001) done = 1;
-        /* Handle exact equality for zero-step edge */
-        if (step == 0) break;
-
-        if (done) break;
-
-        { ExprValue v = val_real(cur_val); vars_set(varname, &v); }
-
-        /* Reset cursor to body start for this iteration */
-        *cur = for_body_start;
-
-        ExecStatus st = exec_for_body(cur);
-        if (st == EXEC_EXIT) {
-            /* Skip rest of body to ENDFOR */
-            while (*cur && (*cur)->type != TOK_EOF &&
-                   !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDFOR)) {
-                if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
-                *cur = (*cur)->next;
-            }
-            if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDFOR) {
-                *cur = (*cur)->next; /* consume ENDFOR */
-            }
-            return EXEC_OK;
-        }
-        if (st == EXEC_RETURN || st == EXEC_CANCEL) {
-            return st;
-        }
-
-        cur_val += step;
-    }
-
-    /* Consume ENDFOR */
-    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDFOR) {
-        *cur = (*cur)->next;
-    }
-
-    return EXEC_OK;
-}
-
-static ExecStatus exec_for_body(Token **cur)
-{
-    while (*cur && (*cur)->type != TOK_EOF) {
-        /* Skip EOL between lines of the body */
-        if ((*cur)->type == TOK_EOL) {
-            *cur = (*cur)->next;
-            continue;
-        }
-
-        if ((*cur)->type == TOK_KEYWORD) {
-            KeywordId kw = (*cur)->keyword_id;
-            if (kw == KW_ENDFOR) {
-                *cur = (*cur)->next;
-                return EXEC_OK;
-            }
-            if (kw == KW_EXIT) {
-                *cur = (*cur)->next;
-                skip_to_eol(cur);
-                while (*cur && (*cur)->type != TOK_EOF &&
-                       !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDFOR)) {
-                    if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
-                    *cur = (*cur)->next;
-                }
-                if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDFOR) {
-                    *cur = (*cur)->next;
-                }
-                return EXEC_EXIT;
-            }
-        }
-
-        ExecStatus st = exec_statement(cur);
-        if (st != EXEC_OK) return st;
-    }
-    return EXEC_OK;
-}
-
 /* ------------------------------------------------------------------ */
 /* Assignment                                                          */
 /* ------------------------------------------------------------------ */

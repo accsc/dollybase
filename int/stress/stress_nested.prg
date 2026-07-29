@@ -20,29 +20,33 @@ ELSE
   ? x, "is negative"
 ENDIF
 
-* Nested DO WHILE inside FOR
+* Nested DO WHILE inside DO WHILE
 ? ""
 ? "Multiplication table 3x3:"
-FOR r = 1 TO 3
+r = 1
+DO WHILE r <= 3
   c = 1
   line = ""
   DO WHILE c <= 3
     v = r * c
-    line = line + " " + ALLTRIM(v)
+    line = line + " " + ALLTRIM(STR(v))
     c = c + 1
   ENDDO
   ? line
-ENDFOR
+  r = r + 1
+ENDDO
 
-* FOR inside DO WHILE
+* DO WHILE inside DO WHILE
 ? ""
 ? "Accumulator:"
 outer = 0
 DO WHILE outer < 3
   inner_sum = 0
-  FOR i = 1 TO 5
+  i = 1
+  DO WHILE i <= 5
     inner_sum = inner_sum + i
-  ENDFOR
+    i = i + 1
+  ENDDO
   ? "outer=", outer, " inner_sum=", inner_sum
   outer = outer + 1
 ENDDO
@@ -51,17 +55,21 @@ ENDDO
 ? ""
 ? "Deep EXIT test:"
 total = 0
-FOR a = 1 TO 5
-  FOR b = 1 TO 5
+a = 1
+DO WHILE a <= 5
+  b = 1
+  DO WHILE b <= 5
     total = total + 1
     IF total >= 7
       EXIT
     ENDIF
-  ENDFOR
+    b = b + 1
+  ENDDO
   IF total >= 7
     EXIT
   ENDIF
-ENDFOR
+  a = a + 1
+ENDDO
 ? "Stopped at total =", total
 
 * 4-level nested IF
@@ -86,11 +94,12 @@ ELSE
   ? x, "is negative"
 ENDIF
 
-* Nested DO WHILE inside FOR inside IF
+* Nested DO WHILE inside IF inside DO WHILE
 ? ""
 ? "Triple-nested control:"
 total = 0
-FOR i = 1 TO 3
+i = 1
+DO WHILE i <= 3
   IF i > 0
     j = 1
     DO WHILE j <= 2
@@ -98,24 +107,29 @@ FOR i = 1 TO 3
       j = j + 1
     ENDDO
   ENDIF
-ENDFOR
+  i = i + 1
+ENDDO
 ? "Triple-nested total =", total
 
-* EXIT from nested FOR
+* EXIT from nested DO WHILE
 ? ""
-? "EXIT from nested FOR:"
+? "EXIT from nested DO WHILE:"
 outer_count = 0
-FOR a = 1 TO 10
-  FOR b = 1 TO 10
+a = 1
+DO WHILE a <= 10
+  b = 1
+  DO WHILE b <= 10
     outer_count = outer_count + 1
     IF outer_count = 5
       EXIT
     ENDIF
-  ENDFOR
+    b = b + 1
+  ENDDO
   IF outer_count >= 5
     EXIT
   ENDIF
-ENDFOR
+  a = a + 1
+ENDDO
 ? "Exited at count =", outer_count
 
 * LOOP in DO WHILE

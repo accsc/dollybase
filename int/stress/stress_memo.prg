@@ -42,7 +42,7 @@ endif
 
 * --- Test 7: Not EOF at top ---
 GO TOP
-if NOT EOF()
+if .NOT. EOF()
     ? "Test 7: Not EOF at GO TOP - OK"
 else
     ? "Test 7: FAIL - should not be EOF at top"
@@ -51,7 +51,7 @@ endif
 * --- Test 8: Read all memo fields in a loop ---
 GO TOP
 rec_count = 0
-DO WHILE NOT EOF()
+DO WHILE .NOT. EOF()
     memo_val = TABLE->COMMENTS
     rec_count = rec_count + 1
     SKIP
@@ -72,7 +72,7 @@ PACK
 * --- Test 11: Verify records after PACK ---
 GO TOP
 rec_count = 0
-DO WHILE NOT EOF()
+DO WHILE .NOT. EOF()
     rec_count = rec_count + 1
     SKIP
 ENDDO
@@ -116,25 +116,27 @@ GO TOP
 upper_memo = UPPER(TABLE->COMMENTS)
 ? "Test 18: UPPER of memo =", SUBSTR(upper_memo, 1, 30)
 
-* --- Test 19: FOR loop with memo access ---
+* --- Test 19: DO WHILE loop with memo access ---
 GO TOP
 count_long = 0
-FOR i = 1 TO 10
-    IF NOT EOF()
+i = 1
+DO WHILE i <= 10
+    IF .NOT. EOF()
         memo_len = LEN(TABLE->COMMENTS)
         IF memo_len > 200
             count_long = count_long + 1
         ENDIF
         SKIP
     ENDIF
-ENDFOR
+    i = i + 1
+ENDDO
 ? "Test 19: Long memos in first 10 =", count_long
 
 * --- Test 20: DO WHILE with memo ---
 GO TOP
 total_len = 0
 cnt = 0
-DO WHILE NOT EOF() AND cnt < 5
+DO WHILE .NOT. EOF() AND cnt < 5
     memo_len = LEN(TABLE->COMMENTS)
     total_len = total_len + memo_len
     cnt = cnt + 1

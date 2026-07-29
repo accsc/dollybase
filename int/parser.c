@@ -65,6 +65,7 @@ static ExprValue builtin_type(Token **cur, ParseError *err);
 static ExprValue builtin_at_func(Token **cur, ParseError *err);
 static ExprValue builtin_between(Token **cur, ParseError *err);
 static ExprValue builtin_date_func(Token **cur, ParseError *err);
+static ExprValue builtin_str(Token **cur, ParseError *err);
 static ExprValue builtin_dtoc(Token **cur, ParseError *err);
 static ExprValue builtin_ctod(Token **cur, ParseError *err);
 static ExprValue builtin_day(Token **cur, ParseError *err);
@@ -414,8 +415,10 @@ static ExprValue parse_pow_expr(Token **cur, ParseError *err) {
 /* ------------------------------------------------------------------ */
 
 static ExprValue parse_unary_expr(Token **cur, ParseError *err) {
-    /* NOT */
-    if (match_keyword(cur, KW_NOT)) {
+    /* .NOT. as unary operator (TOK_LOGICAL with value ".NOT.") */
+    if (cur && *cur && (*cur)->type == TOK_LOGICAL &&
+        strcmp((*cur)->value, ".NOT.") == 0) {
+        *cur = (*cur)->next;
         ExprValue inner = parse_unary_expr(cur, err);
         if (*err != PARSE_OK) return inner;
         int v = val_to_logical(&inner);
@@ -744,6 +747,7 @@ static const FuncEntry func_table[] = {
     { KW_ROUND,     builtin_round },
     { KW_RTRIM,     builtin_rtrim },
     { KW_SIGN,      builtin_sign },
+    { KW_STR,       builtin_str },
     { KW_SQRT,      builtin_sqrt },
     { KW_REPLICATE, builtin_replicate },
     { KW_SPACE,     builtin_space },
@@ -1250,14 +1254,15 @@ static ExprValue builtin_inkey(Token **cur, ParseError *err)
             key = 0;
     } else {
         /* INKEY(n): block up to n seconds */
-        int tenths = (int)(timeout * 10.0);
-        if (tenths < 1) tenths = 1;
-        if (tenths > 255) tenths = 255;
-        halfdelay(tenths);
+        int ms = (int)(timeout * 1000.0);
+        if (ms < 100) ms = 100;
+        nodelay(stdscr, FALSE);
+        wtimeout(stdscr, ms);
         key = getch();
-        nodelay(stdscr, TRUE);
         if (key == ERR)
             key = 0;
+        nodelay(stdscr, TRUE);
+        refresh();
     }
 
     return val_integer(key);
@@ -1512,6 +1517,41 @@ static ExprValue builtin_sign(Token **cur, ParseError *err) {
     free_value(&arg);
     int result = (v > 0) ? 1 : (v < 0) ? -1 : 0;
     return val_integer(result);
+}
+
+/* STR(n [,length [,decimals]]) — convert number to string             */
+static ExprValue builtin_str(Token **cur, ParseError *err) {
+    ExprValue arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) return arg;
+    double v = val_to_double(&arg);
+    free_value(&arg);
+
+    int length = 10;
+    int decimals = 2;
+
+    /* Optional length argument */
+    if (*cur && (*cur)->type == TOK_COMMA) {
+        *cur = (*cur)->next;
+        ExprValue lenVal = parse_expression(cur, err);
+        if (*err != PARSE_OK) return lenVal;
+        length = (int)val_to_double(&lenVal);
+        free_value(&lenVal);
+        if (length < 1) length = 1;
+
+        /* Optional decimals argument */
+        if (*cur && (*cur)->type == TOK_COMMA) {
+            *cur = (*cur)->next;
+            ExprValue decVal = parse_expression(cur, err);
+            if (*err != PARSE_OK) return decVal;
+            decimals = (int)val_to_double(&decVal);
+            free_value(&decVal);
+            if (decimals < 0) decimals = 0;
+        }
+    }
+
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%+*.*f", length, decimals, v);
+    return val_string(buf);
 }
 
 static ExprValue builtin_max(Token **cur, ParseError *err) {

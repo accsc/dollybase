@@ -9,7 +9,7 @@ DISPLAY STRUCTURE
 
 
 ? "--- First 3 records ---"
-DO WHILE RECNO() <= 3 AND NOT EOF()
+DO WHILE RECNO() <= 3 AND .NOT. EOF()
   ? "RECNO:", RECNO()
   SKIP
 ENDDO
@@ -81,7 +81,7 @@ DELETE FOR A->AN_EDICION >= 2000
 ? "DELETE FOR year>=2000 - done"
 GO TOP
 del_count = 0
-DO WHILE NOT EOF()
+DO WHILE .NOT. EOF()
   IF DELETED()
     del_count = del_count + 1
   ENDIF
@@ -112,7 +112,7 @@ DELETE FOR A->AN_EDICION >= 1950 WHILE RECNO() <= 5
 ? "DELETE FOR..WHILE (rec<=5) - done"
 GO TOP
 del_count = 0
-DO WHILE NOT EOF()
+DO WHILE .NOT. EOF()
   IF DELETED()
     del_count = del_count + 1
   ENDIF

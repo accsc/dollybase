@@ -1,24 +1,30 @@
 * stress_loop.prg — loops, conditionals, and control flow
 
-* FOR loop: sum 1..100
+* DO WHILE loop: sum 1..100
 s = 0
-FOR i = 1 TO 100
+i = 1
+DO WHILE i <= 100
   s = s + i
-ENDFOR
+  i = i + 1
+ENDDO
 ? "Sum 1..100 =", s
 
-* FOR with STEP
+* DO WHILE with STEP equivalent
 cnt = 0
-FOR i = 0 TO 20 STEP 5
+i = 0
+DO WHILE i <= 20
   cnt = cnt + 1
-ENDFOR
+  i = i + 5
+ENDDO
 ? "Count 0..20 step 5 =", cnt
 
-* FOR descending
+* DO WHILE descending
 total = 0
-FOR i = 10 TO 1 STEP -1
+i = 10
+DO WHILE i >= 1
   total = total + i
-ENDFOR
+  i = i - 1
+ENDDO
 ? "Sum 10..1 desc =", total
 
 * DO WHILE with EXIT
@@ -44,11 +50,15 @@ ENDDO
 
 * Nested loops
 product = 0
-FOR a = 1 TO 3
-  FOR b = 1 TO 3
+a = 1
+DO WHILE a <= 3
+  b = 1
+  DO WHILE b <= 3
     product = product + 1
-  ENDFOR
-ENDFOR
+    b = b + 1
+  ENDDO
+  a = a + 1
+ENDDO
 ? "3x3 nested count =", product
 
 * IF/ELSE/ENDIF chains
@@ -76,14 +86,16 @@ ELSE
 ENDIF
 ? "25 is", cat
 
-* FOR with EXIT inside IF
+* DO WHILE with EXIT inside IF
 s = 0
-FOR i = 1 TO 100
+i = 1
+DO WHILE i <= 100
   IF i > 10
     EXIT
   ENDIF
   s = s + i
-ENDFOR
+  i = i + 1
+ENDDO
 ? "Sum 1..10 (EXIT) =", s
 
 * RETURN stops execution

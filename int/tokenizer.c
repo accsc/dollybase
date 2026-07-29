@@ -66,7 +66,6 @@ static const KeywordEntry KEYWORDS[] = {
     {"EMPTY",        KW_EMPTY},
     {"ENDCASE",      KW_ENDCASE},
     {"ENDDO",        KW_ENDDO},
-    {"ENDFOR",       KW_ENDFOR},
     {"ENDIF",        KW_ENDIF},
     {"ENDTEXT",      KW_ENDTEXT},
     {"EOF",          KW_EOF},
@@ -107,7 +106,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"MONTH",        KW_MONTH},
     {"MULTILOCKS",   KW_MULTILOCKS},
     {"NEXT",         KW_NEXT},
-    {"NOT",          KW_NOT},
+
     {"OR",           KW_OR},
     {"OTHERWISE",    KW_OTHERWISE},
     {"PACK",         KW_PACK},
@@ -144,6 +143,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"STATUS",       KW_STATUS},
     {"STEP",         KW_STEP},
     {"STORE",        KW_STORE},
+    {"STR",          KW_STR},
     {"STUFF",        KW_STUFF},
     {"SUBSTR",       KW_SUBSTR},
     {"SUM",          KW_SUM},
@@ -383,7 +383,7 @@ static void scan_date_literal(const char **pos, Token **out, int line)
 
 static void scan_logical_literal(const char **pos, Token **out, int line)
 {
-    /* pos points at '.'; check for .T. .F. .Y. .N. */
+    /* pos points at '.'; check for .T. .F. .Y. .N. .NOT. */
     if (**pos != '.')
         return;
     (*pos)++;
@@ -397,8 +397,20 @@ static void scan_logical_literal(const char **pos, Token **out, int line)
     }
     (*pos)++;
 
+    /* Check for .NOT. */
+    if (c == 'N' && toupper((unsigned char)**pos) == 'O') {
+        const char *not_start = (*pos) - 2;  /* points at 'N' */
+        if (toupper((unsigned char)(*pos)[0]) == 'O' &&
+            toupper((unsigned char)(*pos)[1]) == 'T' &&
+            (*pos)[2] == '.') {
+            (*pos) += 3;  /* skip "OT." */
+            *out = make_token(TOK_LOGICAL, ".NOT.", line);
+            return;
+        }
+    }
+
     if (**pos != '.') {
-        /* Not a logical literal (e.g. .NOT. has 'O' after 'N').
+        /* Not a logical literal.
            Back up to BEFORE the '.' so the main loop skips '.' and
            then scans the identifier/keyword normally. */
         (*pos) -= 2;  /* back up past letter and past '.' */

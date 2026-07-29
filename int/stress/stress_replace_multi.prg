@@ -64,7 +64,7 @@ ENDIF
 REPLACE TITULO WITH "FOR_T", AP1_AU WITH "FOR_A" FOR RECNO() <= 3
 GO TOP
 cnt = 0
-DO WHILE NOT EOF() .AND. RECNO() <= 3
+DO WHILE .NOT. EOF() .AND. RECNO() <= 3
     IF TITULO = "FOR_T" .AND. AP1_AU = "FOR_A"
         cnt = cnt + 1
     ENDIF
@@ -98,7 +98,7 @@ ENDIF
 REPLACE TITULO WITH "FW_T", AP1_AU WITH "FW_A" FOR RECNO() >= 1 WHILE RECNO() <= 4
 GO TOP
 cnt = 0
-DO WHILE NOT EOF() .AND. RECNO() <= 10
+DO WHILE .NOT. EOF() .AND. RECNO() <= 10
     IF TITULO = "FW_T" .AND. AP1_AU = "FW_A"
         cnt = cnt + 1
     ENDIF

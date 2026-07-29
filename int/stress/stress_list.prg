@@ -59,7 +59,7 @@ LIST TITULO, AP1_AU FOR "PROFETA"$TITULO .AND. LEN(AP1_AU) > 0 WHILE RECNO() <= 
 * Test 12: Verify $ filter matches expected count
 GO TOP
 count = 0
-DO WHILE NOT EOF()
+DO WHILE .NOT. EOF()
     IF "ANONIMO" $ AP1_AU
         count = count + 1
     ENDIF

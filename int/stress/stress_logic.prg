@@ -7,11 +7,11 @@ a = .T. .AND. .F.
 b = .T. .OR. .F.
 ? ".T. OR .F. =", b
 
-c = NOT .T.
-? "NOT .T. =", c
+c = .NOT. .T.
+? ".NOT. .T. =", c
 
-d = NOT .F.
-? "NOT .F. =", d
+d = .NOT. .F.
+? ".NOT. .F. =", d
 
 * Complex boolean
 e = (.T. .AND. .F.) .OR. (.T. .AND. .T.)

@@ -14,26 +14,34 @@ ENDDO
 * Factorial
 ? ""
 ? "Factorials:"
-FOR i = 0 TO 10
+i = 0
+DO WHILE i <= 10
   fact = 1
-  FOR j = 2 TO i
+  j = 2
+  DO WHILE j <= i
     fact = fact * j
-  ENDFOR
+    j = j + 1
+  ENDDO
   ? i, "! =", fact
-ENDFOR
+  i = i + 1
+ENDDO
 
 * Prime check up to 50
 ? ""
 ? "Primes up to 50:"
-FOR n = 2 TO 50
+n = 2
+DO WHILE n <= 50
   is_prime = .T.
-  FOR d = 2 TO n - 1
+  d = 2
+  DO WHILE d <= n - 1
     IF n % d = 0
       is_prime = .F.
       EXIT
     ENDIF
-  ENDFOR
+    d = d + 1
+  ENDDO
   IF is_prime
     ? n
   ENDIF
-ENDFOR
+  n = n + 1
+ENDDO

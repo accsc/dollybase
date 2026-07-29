@@ -97,20 +97,20 @@ ENDDO
 
 * Test 8: Multiple statements in a CASE branch
 x = 2
-val = 0
+val1 = 0
 flag = ""
 DO CASE
     CASE x = 1
-        val = 100
+        val1 = 100
         flag = "SET1"
     CASE x = 2
-        val = 200
+        val1 = 200
         flag = "SET2"
     OTHERWISE
-        val = 999
+        val1 = 999
         flag = "SET_OTHER"
 ENDCASE
-? "Test 8 (multi stmt): val=" + LTRIM(STR(val)) + " flag=" + flag
+? "Test 8 (multi stmt): val1=" + LTRIM(STR(val1)) + " flag=" + flag
 
 * Test 9: Logical expression with .AND.
 a = 5

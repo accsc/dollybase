@@ -164,6 +164,7 @@ typedef enum {
     KW_FIELDS,
     KW_FOUND,
     KW_IIF,
+    KW_INKEY,
     KW_INT_FUNC,          /* INT()                                  */
     KW_LEFT_FUNC,         /* LEFT()                                 */
     KW_LEN,

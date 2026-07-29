@@ -16,6 +16,7 @@
 #include <ctype.h>
 #include <strings.h>
 #include <time.h>
+#include <curses.h>
 
 /* ------------------------------------------------------------------ */
 /* Forward declarations (grammar levels, lowest precedence first)      */
@@ -54,6 +55,7 @@ static ExprValue builtin_substr(Token **cur, ParseError *err);
 static ExprValue builtin_left_func(Token **cur, ParseError *err);
 static ExprValue builtin_right_func(Token **cur, ParseError *err);
 static ExprValue builtin_iif(Token **cur, ParseError *err);
+static ExprValue builtin_inkey(Token **cur, ParseError *err);
 static ExprValue builtin_empty(Token **cur, ParseError *err);
 static ExprValue builtin_type(Token **cur, ParseError *err);
 static ExprValue builtin_at_func(Token **cur, ParseError *err);
@@ -682,6 +684,7 @@ static const FuncEntry func_table[] = {
     { KW_EOF,       builtin_eof },
     { KW_FOUND,     builtin_found },
     { KW_IIF,       builtin_iif },
+    { KW_INKEY,     builtin_inkey },
     { KW_INT_FUNC,  builtin_int_func },
     { KW_LEFT_FUNC, builtin_left_func },
     { KW_LEN,       builtin_len },
@@ -1031,6 +1034,56 @@ static ExprValue builtin_iif(Token **cur, ParseError *err) {
         free_value(&true_val);
         return false_val;
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* INKEY([nSeconds]) — return ASCII code of key press                  */
+/*   No arg: block indefinitely until a key is pressed                 */
+/*   Arg = 0: non-blocking (return 0 if no key waiting)               */
+/*   Arg > 0: block up to nSeconds, return 0 on timeout                */
+/* ------------------------------------------------------------------ */
+
+static ExprValue builtin_inkey(Token **cur, ParseError *err)
+{
+    (void)err;
+    int has_arg = 0;
+    double timeout = 0;
+
+    /* Check for optional seconds argument */
+    if (cur && *cur && (*cur)->type != TOK_RPAREN && (*cur)->type != TOK_EOF && (*cur)->type != TOK_EOL) {
+        ExprValue arg = parse_expression(cur, err);
+        if (*err != PARSE_OK) return arg;
+        timeout = val_to_double(&arg);
+        free_value(&arg);
+        has_arg = 1;
+    }
+
+    int key;
+
+    if (!has_arg) {
+        /* No argument: block indefinitely */
+        nodelay(stdscr, FALSE);
+        key = getch();
+        nodelay(stdscr, TRUE);
+    } else if (timeout == 0) {
+        /* INKEY(0): non-blocking */
+        nodelay(stdscr, TRUE);
+        key = getch();
+        if (key == ERR)
+            key = 0;
+    } else {
+        /* INKEY(n): block up to n seconds */
+        int tenths = (int)(timeout * 10.0);
+        if (tenths < 1) tenths = 1;
+        if (tenths > 255) tenths = 255;
+        halfdelay(tenths);
+        key = getch();
+        nodelay(stdscr, TRUE);
+        if (key == ERR)
+            key = 0;
+    }
+
+    return val_integer(key);
 }
 
 static ExprValue builtin_empty(Token **cur, ParseError *err) {

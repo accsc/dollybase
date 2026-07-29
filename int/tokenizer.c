@@ -83,6 +83,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"IF",           KW_IF},
     {"IIF",          KW_IIF},
     {"INDEX",        KW_INDEX},
+    {"INKEY",        KW_INKEY},
     {"INSERT",       KW_INSERT},
     {"INT",          KW_INT_FUNC},
     {"JOIN",         KW_JOIN},

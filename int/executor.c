@@ -71,7 +71,6 @@ const Procedure *proc_registry_lookup(const char *name)
 /* Scan token list for PROCEDURE <name> definitions and register them. */
 void proc_scan(Token *tokens)
 {
-    proc_registry_init();
     Token *cur = tokens;
     while (cur) {
         if (cur->type == TOK_KEYWORD && cur->keyword_id == KW_PROCEDURE) {
@@ -700,6 +699,7 @@ ExecStatus execute_file(const char *path)
     if (!tokens)
         return EXEC_CANCEL;
 
+    proc_registry_init();
     proc_scan(tokens);
 
     ExecStatus st = execute_tokens(tokens);

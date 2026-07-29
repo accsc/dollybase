@@ -40,6 +40,26 @@ void ui_say_redraw(void);
 void ui_say_clear(void);
 
 /* ------------------------------------------------------------------ */
+/* TEXT ... ENDTEXT — block text output                               */
+/* ------------------------------------------------------------------ */
+
+/* Redraw all stored TEXT block lines.                                 */
+void ui_text_redraw(void);
+
+/* Clear the TEXT block list.                                          */
+void ui_text_clear(void);
+
+/* TEXT block tracking (used by executor for TEXT/ENDTEXT) */
+typedef struct TextEntry TextEntry;
+struct TextEntry {
+    int row;
+    char text[256];
+    struct TextEntry *next;
+};
+extern TextEntry *text_list;
+extern int text_row;
+
+/* ------------------------------------------------------------------ */
 /* @...GET — positioned input                                         */
 /* ------------------------------------------------------------------ */
 

@@ -1824,10 +1824,17 @@ static ExecStatus exec_text(Token **cur)
         if ((*cur)->type == TOK_STRING) {
             expand_macros((*cur)->value, expanded, sizeof(expanded));
             if (ui_is_active()) {
-                addstr(expanded);
+                /* Store for redraw and display at current text_row */
+                TextEntry *te = calloc(1, sizeof(TextEntry));
+                if (te) {
+                    te->row = text_row;
+                    strncpy(te->text, expanded, sizeof(te->text) - 1);
+                    te->next = text_list;
+                    text_list = te;
+                }
+                mvaddstr(text_row, 0, expanded);
                 refresh();
-                addch('\n');
-                refresh();
+                text_row++;
             } else {
                 printf("%s\n", expanded);
                 fflush(stdout);
@@ -2482,7 +2489,7 @@ static ExecStatus exec_at(Token **cur)
     }
 
     if (rcur->keyword_id == KW_SAY) {
-        /* @...SAY <expr> */
+        /* @...SAY <expr> [GET <var>] */
         rcur = rcur->next; /* skip "SAY" */
         ExprValue val = parse_expr(&rcur);
         char *s = val_to_string(&val);
@@ -2490,6 +2497,18 @@ static ExecStatus exec_at(Token **cur)
         ui_refresh();
         free(s);
         free_value(&val);
+
+        /* Check for optional GET after SAY */
+        if (rcur && rcur->type == TOK_KEYWORD && rcur->keyword_id == KW_GET) {
+            rcur = rcur->next; /* skip "GET" */
+            if (rcur && rcur->type == TOK_IDENT) {
+                char varname[64];
+                strncpy(varname, rcur->value, sizeof(varname) - 1);
+                varname[sizeof(varname) - 1] = '\0';
+                rcur = rcur->next;
+                ui_get_add(row, col, varname, 10);
+            }
+        }
         skip_to_eol(cur);
         return EXEC_OK;
 

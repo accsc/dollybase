@@ -32,6 +32,10 @@ typedef struct SayEntry {
 
 static SayEntry *say_list = NULL;
 
+/* TEXT block lines — stored so we can redraw after form is posted */
+TextEntry *text_list = NULL;
+int text_row = 0;  /* Current row for TEXT output */
+
 /* ------------------------------------------------------------------ */
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
@@ -70,6 +74,7 @@ void ui_say(int row, int col, const char *text)
 {
     if (!ui_active || !text) return;
     mvaddstr(row, col, text);
+    refresh();
 
     /* Store for redraw on form window */
     SayEntry *se = calloc(1, sizeof(SayEntry));
@@ -103,6 +108,28 @@ void ui_say_clear(void)
     say_list = NULL;
 }
 
+void ui_text_redraw(void)
+{
+    if (!ui_active) return;
+    TextEntry *te = text_list;
+    while (te) {
+        mvwaddstr(stdscr, te->row, 0, te->text);
+        te = te->next;
+    }
+}
+
+void ui_text_clear(void)
+{
+    TextEntry *te = text_list;
+    while (te) {
+        TextEntry *next = te->next;
+        free(te);
+        te = next;
+    }
+    text_list = NULL;
+    text_row = 0;
+}
+
 void ui_refresh(void)
 {
     if (ui_active) refresh();
@@ -117,6 +144,9 @@ void ui_clear(void)
     if (!ui_active) return;
     erase();
     refresh();
+    ui_text_clear();
+    ui_say_clear();
+    text_row = 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -276,9 +306,9 @@ void ui_read(void)
 
     pos_form_cursor(form);
 
-    /* Redraw SAY text that may have been erased by the form */
+    /* Redraw SAY text and TEXT block that may have been erased by the form */
     ui_say_redraw();
-    touchwin(stdscr);
+    ui_text_redraw();
     refresh();
     wrefresh(fw);
 
@@ -360,6 +390,7 @@ void ui_read(void)
     /* Restore stdscr after form removal so subsequent SAY/? render correctly */
     touchwin(stdscr);
     ui_say_redraw();
+    ui_text_redraw();
     refresh();
 }
 

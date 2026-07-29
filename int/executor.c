@@ -2347,7 +2347,11 @@ static ExecStatus exec_list(Token **cur)
         end_rec = (int)db->recnos;
         iterate = 1;
     } else {
-        /* No scope — current record only */
+        /* No scope — LIST defaults to ALL in dBASE */
+        wa_goto_top();
+        start_rec = 1;
+        end_rec = (int)db->recnos;
+        iterate = 1;
     }
 
     /* Paginated display */

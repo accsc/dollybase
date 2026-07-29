@@ -393,6 +393,18 @@ static ExecStatus exec_statement(Token **cur)
         return exec_assign(cur);
     }
 
+    /* Expression statement: evaluate and discard result (e.g., INKEY(1), EOF()) */
+    if (t->type == TOK_KEYWORD) {
+        /* Check if this keyword is a function-like builtin (has parens next) */
+        Token *next = t->next;
+        if (next && next->type == TOK_LPAREN) {
+            ExprValue val = parse_expr(cur);
+            free_value(&val);
+            skip_to_eol(cur);
+            return EXEC_OK;
+        }
+    }
+
     /* Fallback: skip to end of line */
     skip_to_eol(cur);
     return EXEC_OK;

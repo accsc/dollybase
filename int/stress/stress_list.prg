@@ -34,4 +34,24 @@ LIST ALL FOR AN_EDICION > 0 WHILE RECNO() <= 5
 ? "Test 7: LIST RECORD 1"
 LIST RECORD 1
 
+* Test 8: LIST bare field names (no FIELD keyword)
+? "Test 8: LIST bare field names"
+GO TOP
+LIST NEXT 2 TITULO, NMB_AU
+
+* Test 9: LIST with $ operator in FOR
+? "Test 9: LIST FOR with $ operator"
+GO TOP
+LIST TITULO FOR "ANONIMO"$AP1_AU
+
+* Test 10: LIST FOR with $ on numeric coercion
+? "Test 10: LIST FOR with $ on numeric"
+GO TOP
+LIST TITULO FOR "1983"$LTRIM(STR(AN_EDICION))
+
+* Test 11: LIST FOR with .AND. and $
+? "Test 11: LIST FOR with .AND. and $"
+GO TOP
+LIST TITULO, AP1_AU FOR "PROFETA"$TITULO .AND. LEN(AP1_AU) > 0 WHILE RECNO() <= 10
+
 QUIT

@@ -2171,43 +2171,59 @@ static ExecStatus exec_list(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "LIST" */
 
-    /* Parse optional FIELD clause */
+    /* Parse optional field list: FIELD <names> or bare <name>[,<name>...]
+       Stop at scope keywords (ALL, NEXT, RECORD, REST, FOR, WHILE) */
     int *field_list = NULL;
     int field_count = 0;
     int show_all_fields = 1;
 
+    /* Optional FIELD keyword */
     if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_FIELD) {
         *cur = (*cur)->next; /* skip "FIELD" */
         show_all_fields = 0;
-        while (*cur && !is_eol_or_eof(*cur)) {
-            if ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_KEYWORD) {
-                int *tmp = realloc(field_list, (size_t)(field_count + 1) * sizeof(int));
-                if (tmp) {
-                    field_list = tmp;
-                    char *fname = strdup((*cur)->value);
-                    int fc = wa_field_count();
-                    for (int i = 1; i <= fc; i++) {
-                        char *n = wa_field_name(i);
-                        if (port_strcasecmp(n, fname) == 0) {
-                            field_list[field_count++] = i;
-                            break;
-                        }
-                        free(n);
-                    }
-                    free(fname);
-                }
-                *cur = (*cur)->next;
-            } else if ((*cur)->type == TOK_COMMA) {
-                *cur = (*cur)->next;
-            } else {
+    }
+
+    /* Collect field names until scope keyword or EOL */
+    while (*cur && !is_eol_or_eof(*cur)) {
+        /* Stop at scope keywords */
+        if ((*cur)->type == TOK_KEYWORD) {
+            KeywordId kw = (*cur)->keyword_id;
+            if (kw == KW_ALL || kw == KW_NEXT || kw == KW_RECORD ||
+                kw == KW_REST || kw == KW_FOR || kw == KW_WHILE)
                 break;
+        }
+        if ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_KEYWORD) {
+            show_all_fields = 0;
+            int *tmp = realloc(field_list, (size_t)(field_count + 1) * sizeof(int));
+            if (tmp) {
+                field_list = tmp;
+                char *fname = strdup((*cur)->value);
+                int fc = wa_field_count();
+                for (int i = 1; i <= fc; i++) {
+                    char *n = wa_field_name(i);
+                    if (port_strcasecmp(n, fname) == 0) {
+                        field_list[field_count++] = i;
+                        break;
+                    }
+                    free(n);
+                }
+                free(fname);
             }
+            *cur = (*cur)->next;
+        } else if ((*cur)->type == TOK_COMMA) {
+            show_all_fields = 0;
+            *cur = (*cur)->next;
+        } else {
+            break;
         }
     }
 
     /* Parse scope */
     ScopeInfo si;
     parse_scope(cur, &si);
+    /* LIST/DISPLAY with FOR/WHILE implicitly means ALL scope */
+    if (si.for_start || si.while_start)
+        si.scope_all = 1;
     skip_to_eol(cur);
 
     DATABASEDBF *db = wa_db();

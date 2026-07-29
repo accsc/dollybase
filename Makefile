@@ -16,10 +16,10 @@ ifndef CC
   CC = gcc
 endif
 ifndef CFLAGS
-  CFLAGS = -w
+  CFLAGS = -w -DNCURSES_WIDECHAR=1
 endif
 ifndef NCURSES_LIBS
-  NCURSES_LIBS = -lncurses
+  NCURSES_LIBS = -lncursesw -ltinfo
 endif
 ifndef PREFIX
   PREFIX = /usr/local

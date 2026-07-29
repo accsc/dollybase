@@ -4,6 +4,146 @@
 #include <string.h>
 #include <strings.h>
 
+/* ------------------------------------------------------------------ */
+/* CP437 <-> UTF-8 encoding conversion                                */
+/* DBF files from dBASE store text in CP437 (IBM PC code page).       */
+/* ncurses / terminals expect UTF-8.                                  */
+/* The lookup table maps CP437 bytes 0x80-0xFF to their Unicode code  */
+/* points. Bytes 0x00-0x7F are ASCII and pass through unchanged.      */
+/* ------------------------------------------------------------------ */
+
+static unsigned int cp437_to_unicode[256]; /* populated by cp437_init() */
+
+/* Initialize CP437 table — called once at startup */
+static void cp437_init(void)
+{
+    /* 0x00-0x7F are already ASCII (identity) */
+    /* 0x80-0x8F: accented lowercase */
+    cp437_to_unicode[0x80]=199; cp437_to_unicode[0x81]=252; cp437_to_unicode[0x82]=233; cp437_to_unicode[0x83]=226;
+    cp437_to_unicode[0x84]=228; cp437_to_unicode[0x85]=224; cp437_to_unicode[0x86]=229; cp437_to_unicode[0x87]=231;
+    cp437_to_unicode[0x88]=234; cp437_to_unicode[0x89]=235; cp437_to_unicode[0x8A]=232; cp437_to_unicode[0x8B]=239;
+    cp437_to_unicode[0x8C]=238; cp437_to_unicode[0x8D]=236; cp437_to_unicode[0x8E]=196; cp437_to_unicode[0x8F]=197;
+    /* 0x90-0x9F: accented uppercase, symbols */
+    cp437_to_unicode[0x90]=201; cp437_to_unicode[0x91]=230; cp437_to_unicode[0x92]=198; cp437_to_unicode[0x93]=244;
+    cp437_to_unicode[0x94]=246; cp437_to_unicode[0x95]=242; cp437_to_unicode[0x96]=251; cp437_to_unicode[0x97]=249;
+    cp437_to_unicode[0x98]=255; cp437_to_unicode[0x99]=214; cp437_to_unicode[0x9A]=220; cp437_to_unicode[0x9B]=162;
+    cp437_to_unicode[0x9C]=163; cp437_to_unicode[0x9D]=165; cp437_to_unicode[0x9E]=8359; cp437_to_unicode[0x9F]=402;
+    /* 0xA0-0xAF: accented, punctuation */
+    cp437_to_unicode[0xA0]=225; cp437_to_unicode[0xA1]=237; cp437_to_unicode[0xA2]=243; cp437_to_unicode[0xA3]=250;
+    cp437_to_unicode[0xA4]=241; cp437_to_unicode[0xA5]=209; cp437_to_unicode[0xA6]=170; cp437_to_unicode[0xA7]=186;
+    cp437_to_unicode[0xA8]=191; cp437_to_unicode[0xA9]=8976; cp437_to_unicode[0xAA]=172; cp437_to_unicode[0xAB]=189;
+    cp437_to_unicode[0xAC]=188; cp437_to_unicode[0xAD]=161; cp437_to_unicode[0xAE]=171; cp437_to_unicode[0xAF]=187;
+    /* 0xB0-0xBF: box drawing */
+    cp437_to_unicode[0xB0]=9617;cp437_to_unicode[0xB1]=9618;cp437_to_unicode[0xB2]=9619;cp437_to_unicode[0xB3]=9474;
+    cp437_to_unicode[0xB4]=9508;cp437_to_unicode[0xB5]=9569;cp437_to_unicode[0xB6]=9570;cp437_to_unicode[0xB7]=9558;
+    cp437_to_unicode[0xB8]=9557;cp437_to_unicode[0xB9]=9571;cp437_to_unicode[0xBA]=9553;cp437_to_unicode[0xBB]=9559;
+    cp437_to_unicode[0xBC]=9565;cp437_to_unicode[0xBD]=9564;cp437_to_unicode[0xBE]=9563;cp437_to_unicode[0xBF]=9488;
+    /* 0xC0-0xCF: box drawing */
+    cp437_to_unicode[0xC0]=9492;cp437_to_unicode[0xC1]=9524;cp437_to_unicode[0xC2]=9516;cp437_to_unicode[0xC3]=9500;
+    cp437_to_unicode[0xC4]=9472;cp437_to_unicode[0xC5]=9532;cp437_to_unicode[0xC6]=9566;cp437_to_unicode[0xC7]=9567;
+    cp437_to_unicode[0xC8]=9562;cp437_to_unicode[0xC9]=9556;cp437_to_unicode[0xCA]=9577;cp437_to_unicode[0xCB]=9574;
+    cp437_to_unicode[0xCC]=9568;cp437_to_unicode[0xCD]=9552;cp437_to_unicode[0xCE]=9580;cp437_to_unicode[0xCF]=9575;
+    /* 0xD0-0xDF: box drawing, blocks */
+    cp437_to_unicode[0xD0]=9576;cp437_to_unicode[0xD1]=9572;cp437_to_unicode[0xD2]=9573;cp437_to_unicode[0xD3]=9561;
+    cp437_to_unicode[0xD4]=9560;cp437_to_unicode[0xD5]=9554;cp437_to_unicode[0xD6]=9555;cp437_to_unicode[0xD7]=9579;
+    cp437_to_unicode[0xD8]=9578;cp437_to_unicode[0xD9]=9496;cp437_to_unicode[0xDA]=9484;cp437_to_unicode[0xDB]=9608;
+    cp437_to_unicode[0xDC]=9604;cp437_to_unicode[0xDD]=9612;cp437_to_unicode[0xDE]=9616;cp437_to_unicode[0xDF]=9600;
+    /* 0xE0-0xEF: Greek, math */
+    cp437_to_unicode[0xE0]=945; cp437_to_unicode[0xE1]=223; cp437_to_unicode[0xE2]=915; cp437_to_unicode[0xE3]=960;
+    cp437_to_unicode[0xE4]=931; cp437_to_unicode[0xE5]=963; cp437_to_unicode[0xE6]=181; cp437_to_unicode[0xE7]=964;
+    cp437_to_unicode[0xE8]=934; cp437_to_unicode[0xE9]=920; cp437_to_unicode[0xEA]=937; cp437_to_unicode[0xEB]=948;
+    cp437_to_unicode[0xEC]=8734;cp437_to_unicode[0xED]=966; cp437_to_unicode[0xEE]=949; cp437_to_unicode[0xEF]=8745;
+    /* 0xF0-0xFF: math, misc */
+    cp437_to_unicode[0xF0]=8801;cp437_to_unicode[0xF1]=177; cp437_to_unicode[0xF2]=8805;cp437_to_unicode[0xF3]=8804;
+    cp437_to_unicode[0xF4]=8992;cp437_to_unicode[0xF5]=8993;cp437_to_unicode[0xF6]=247; cp437_to_unicode[0xF7]=8776;
+    cp437_to_unicode[0xF8]=176; cp437_to_unicode[0xF9]=8729;cp437_to_unicode[0xFA]=183; cp437_to_unicode[0xFB]=8730;
+    cp437_to_unicode[0xFC]=8319;cp437_to_unicode[0xFD]=178; cp437_to_unicode[0xFE]=9632;cp437_to_unicode[0xFF]=160;
+}
+
+/* Write a Unicode code point as UTF-8. Returns number of bytes written. */
+static int utf8_encode(char *buf, unsigned int cp)
+{
+    if (cp < 0x80) {
+        buf[0] = (char)cp;
+        return 1;
+    } else if (cp < 0x800) {
+        buf[0] = (char)(0xC0 | (cp >> 6));
+        buf[1] = (char)(0x80 | (cp & 0x3F));
+        return 2;
+    } else {
+        buf[0] = (char)(0xE0 | (cp >> 12));
+        buf[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        buf[2] = (char)(0x80 | (cp & 0x3F));
+        return 3;
+    }
+}
+
+static char *cp437_to_utf8(const char *src)
+{
+    if (!src) return NULL;
+    size_t len = strlen(src);
+    char *out = malloc(len * 3 + 1);
+    if (!out) return NULL;
+    size_t oi = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)src[i];
+        unsigned int cp = (c < 0x80) ? c : cp437_to_unicode[c];
+        oi += utf8_encode(out + oi, cp);
+    }
+    out[oi] = '\0';
+    return out;
+}
+
+/* Reverse lookup: UTF-8 -> CP437 byte (best effort) */
+static unsigned int unicode_to_cp437[1200];
+static int cp437_rev_init_done = 0;
+
+static void cp437_rev_init(void)
+{
+    if (cp437_rev_init_done) return;
+    memset(unicode_to_cp437, 0, sizeof(unicode_to_cp437));
+    for (int i = 0; i < 256; i++) {
+        unsigned int cp = cp437_to_unicode[(unsigned char)i];
+        if (cp < 1200)
+            unicode_to_cp437[cp] = (unsigned char)i;
+    }
+    cp437_rev_init_done = 1;
+}
+
+static char *utf8_to_cp437(const char *src)
+{
+    if (!src) return NULL;
+    cp437_rev_init();
+    size_t len = strlen(src);
+    char *out = malloc(len + 1);
+    if (!out) return NULL;
+    size_t oi = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)src[i];
+        if (c < 0x80) {
+            out[oi++] = (char)c;
+        } else if ((c & 0xE0) == 0xC0 && i + 1 < len) {
+            unsigned char c2 = (unsigned char)src[i + 1];
+            unsigned int cp = ((c & 0x1F) << 6) | (c2 & 0x3F);
+            if (cp < 1200 && unicode_to_cp437[cp]) {
+                out[oi++] = (char)unicode_to_cp437[cp];
+            }
+            /* else drop */
+            i++;
+        } else if ((c & 0xF0) == 0xE0 && i + 2 < len) {
+            unsigned char c2 = (unsigned char)src[i + 1];
+            unsigned char c3 = (unsigned char)src[i + 2];
+            unsigned int cp = ((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+            if (cp < 1200 && unicode_to_cp437[cp]) {
+                out[oi++] = (char)unicode_to_cp437[cp];
+            }
+            i += 2;
+        }
+    }
+    out[oi] = '\0';
+    return out;
+}
+
 static DATABASEDBF *areas[MAX_WORK_AREAS];
 static int selected = 0;  // 0-based index
 
@@ -38,6 +178,7 @@ static char *custom_aliases[MAX_WORK_AREAS];
 
 void wa_init(void)
 {
+    cp437_init();
     memset(areas, 0, sizeof(areas));
     memset(idx_states, 0, sizeof(idx_states));
     for (int i = 0; i < MAX_WORK_AREAS; i++) {
@@ -382,9 +523,9 @@ char *wa_get_field(int idx)
     if (!buf) return NULL;
     char *p = buf;
     get_field(db, idx, &p);
-    char *result = strdup(buf);
+    char *utf8 = cp437_to_utf8(buf);
     free(buf);
-    return result;
+    return utf8;
 }
 
 int wa_field_to_number_area(int area, const char *name)
@@ -408,16 +549,19 @@ char *wa_get_field_area(int area, int idx)
     if (!buf) return NULL;
     char *p = buf;
     get_field(areas[area], idx, &p);
-    char *result = strdup(buf);
+    char *utf8 = cp437_to_utf8(buf);
     free(buf);
-    return result;
+    return utf8;
 }
 
 int wa_replace(const char *fieldname, const char *value)
 {
     DATABASEDBF *db = wa_db();
     if (!db) return -1;
-    return replace(db, (char *)fieldname, (char *)value);
+    char *latin1 = utf8_to_cp437(value);
+    int rc = replace(db, (char *)fieldname, latin1 ? latin1 : (char *)value);
+    free(latin1);
+    return rc;
 }
 
 /* ------------------------------------------------------------------ */

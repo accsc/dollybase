@@ -1527,7 +1527,8 @@ static ExprValue builtin_str(Token **cur, ParseError *err) {
     free_value(&arg);
 
     int length = 10;
-    int decimals = 2;
+    int decimals = 0;
+    int decimals_given = 0;
 
     /* Optional length argument */
     if (*cur && (*cur)->type == TOK_COMMA) {
@@ -1546,11 +1547,15 @@ static ExprValue builtin_str(Token **cur, ParseError *err) {
             decimals = (int)val_to_double(&decVal);
             free_value(&decVal);
             if (decimals < 0) decimals = 0;
+            decimals_given = 1;
         }
     }
 
+    /* Default: 0 decimals. If caller explicitly asks, use that value. */
+    /* dBASE STR() does not append .00 by default. */
+
     char buf[64];
-    snprintf(buf, sizeof(buf), "%+*.*f", length, decimals, v);
+    snprintf(buf, sizeof(buf), "% *.*f", length, decimals, v);
     return val_string(buf);
 }
 

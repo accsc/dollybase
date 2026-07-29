@@ -137,7 +137,9 @@ static int call_pop(Token **out_return)
         free_value(&frame->params[i]);
     }
     if (frame->is_file && frame->tokens) {
-        free_tokens(frame->tokens);
+        /* Don't free — procedure registry may hold pointers into these tokens.
+           They'll leak but the program is short-lived. */
+        // free_tokens(frame->tokens);
     }
     return 1;
 }
@@ -603,6 +605,9 @@ static ExecStatus exec_do_call(Token **cur)
     /* Scan for procedures in the loaded file too */
     proc_scan(file_tokens);
 
+    /* Look up the target procedure in the loaded file */
+    const Procedure *fproc = proc_registry_lookup(target);
+
     /* Push call frame with file cleanup */
     call_push(return_point, file_tokens, 1);
     /* Transfer WITH arguments to the call frame */
@@ -615,10 +620,32 @@ static ExecStatus exec_do_call(Token **cur)
         }
     }
 
+    if (fproc && fproc->start) {
+        /* File has the target procedure — run its body directly */
+        Token *end_sentinel = NULL;
+        Token *scan = fproc->start;
+        while (scan) {
+            if (scan->type == TOK_KEYWORD && scan->keyword_id == KW_PROCEDURE) {
+                end_sentinel = scan;
+                break;
+            }
+            if (scan->type == TOK_EOF)
+                break;
+            scan = scan->next;
+        }
+        Token *body_cur = fproc->start;
+        ExecStatus st = execute_token_range(&body_cur, end_sentinel);
+        if (st == EXEC_RETURN) {
+            *cur = last_return_target;
+            return EXEC_OK;
+        }
+        return st;
+    }
+
+    /* No procedure found — run top-level code in the file */
     Token *file_cur = file_tokens;
     ExecStatus st = execute_tokens(file_cur);
     if (st == EXEC_RETURN) {
-        /* RETURN popped the call stack (and freed file tokens). Resume. */
         *cur = last_return_target;
         return EXEC_OK;
     }

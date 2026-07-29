@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <locale.h>
 
 #include "tokenizer.h"
 #include "parser.h"
@@ -131,6 +132,9 @@ int main(int argc, char *argv[])
             return 1;  /* file was given but unreadable/empty */
         return 0;       /* empty stdin is fine */
     }
+
+    /* Enable UTF-8 locale so ncurses renders multi-byte chars correctly */
+    setlocale(LC_ALL, "");
 
     vars_init();
     wa_init();

@@ -442,13 +442,17 @@ static void update_dbf_date(DATABASEDBF *db)
     if (!db) return;
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
-    snprintf(db->date, sizeof(db->date), "%02d%02d%04d",
-             t->tm_mon + 1, t->tm_mday, t->tm_year + 1900);
-    /* Write only the 4-byte date field at header offset 4 */
+    unsigned char date_bytes[3];
+    date_bytes[0] = (unsigned char)(t->tm_year % 100);  /* YY - years since 1900 */
+    date_bytes[1] = (unsigned char)(t->tm_mon + 1);      /* MM */
+    date_bytes[2] = (unsigned char)(t->tm_mday);          /* DD */
+    snprintf(db->date, sizeof(db->date), "%02d/%02d/20%02d",
+             t->tm_mon + 1, t->tm_mday, t->tm_year % 100);
+    /* Write 3-byte date at header offsets 1-3 (YY, MM, DD) */
     FILE *f = fopen(db->name, "r+b");
     if (f) {
-        fseek(f, 4, SEEK_SET);
-        fwrite(db->date, 1, 4, f);
+        fseek(f, 1, SEEK_SET);
+        fwrite(date_bytes, 1, 3, f);
         fclose(f);
     }
 }
@@ -480,7 +484,7 @@ int wa_pack(void)
 
     /* Close and re-open to reload header (recnos changed on disk) */
     wa_close(sel);
-    wa_use(db_name, sel, custom_aliases[sel]);
+    wa_use(db_name, sel + 1, custom_aliases[sel]);
     wa_goto(saved_rec);
     if (wa_eof())
         wa_goto_bottom();

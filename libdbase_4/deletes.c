@@ -132,9 +132,9 @@ return FALSO;
 int pack(DATABASEDBF *asp)
 {
 FILE *h;
-FILE *j; 
+FILE *j;
 int pos,estos,i;
-char *nomb_tmp;
+char nomb_tmp[2048];
 int mas = 0;
 estos = 0;
 pos = reccount(asp);
@@ -144,7 +144,16 @@ fprintf(stderr,"Warning: pack() called, this is a alpha function\n");
 fprintf(stderr,"If something goes wrong i've copied the db in other temp file\n");
 fflush(stderr);
 #endif
-nomb_tmp = tempnam(NULL,"dolly");
+/* Create temp file in same directory as source to avoid cross-filesystem rename */
+{
+const char *slash = strrchr(asp->name, '/');
+int dir_len = slash ? (int)(slash + 1 - asp->name) : 0;
+snprintf(nomb_tmp, sizeof(nomb_tmp), "%.*s.dolly_tmp_", dir_len, asp->name);
+int prefix_len = (int)strlen(nomb_tmp);
+for (int k = 0; k < 6 && prefix_len + k < (int)sizeof(nomb_tmp) - 1; k++)
+nomb_tmp[prefix_len + k] = rand() % 10 + '0';
+nomb_tmp[prefix_len + 6] = '\0';
+}
 if( (h = fopen(asp->name,"rb")) == NULL)
 	return -1;
 if ( (j = fopen(nomb_tmp,"wb")) == NULL)
@@ -213,7 +222,7 @@ int pack_db_with_dbt_file(DATABASEDBF *asp, char *_na)
 	FILE *output_dbt;
 
 	int max_recs, contador, c2, deletes;
-	char *name_tmp, *dbt_tmp;
+	char name_tmp[2048], dbt_tmp[2048];
 	char dbt_header[512];
 
 	/* Collect memo block references from surviving records */
@@ -228,8 +237,17 @@ int pack_db_with_dbt_file(DATABASEDBF *asp, char *_na)
 	max_recs = reccount(asp);
 	gotos(&asp, 1);
 
-	name_tmp = tempnam(NULL, "dolly");
-	dbt_tmp = tempnam(NULL, "dbtd");
+	/* Create temp files in same directory to avoid cross-filesystem rename */
+	{
+		const char *slash = strrchr(asp->name, '/');
+		int dir_len = slash ? (int)(slash + 1 - asp->name) : 0;
+		snprintf(name_tmp, sizeof(name_tmp), "%.*s.dolly_tmp_", dir_len, asp->name);
+		for (int k = dir_len + 12; k < (int)sizeof(name_tmp); k++)
+			name_tmp[k] = rand() % 10 + '0';
+		snprintf(dbt_tmp, sizeof(dbt_tmp), "%.*s.dbtd_tmp_", dir_len, _na);
+		for (int k = dir_len + 11; k < (int)sizeof(dbt_tmp); k++)
+			dbt_tmp[k] = rand() % 10 + '0';
+	}
 #ifdef DEBUG
 	fprintf(stderr, "Warning: Pack_db_with_dbt_file is an alpha function\n");
 	fflush(stderr);

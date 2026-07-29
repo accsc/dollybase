@@ -22,7 +22,7 @@ if( (o = fopen(asp->name,"r+")) == NULL)
 #endif
 return -1;
 }
-pos = ((asp->current-1)*asp->rec_len) + asp->header_len + asp->current ;
+pos = ((asp->current-1)*asp->rec_len) + asp->header_len;
 fseek(o,pos,SEEK_SET);
 fputc('*',o);
 fclose(o);
@@ -61,7 +61,7 @@ if( (o = fopen(asp->name,"r+")) == NULL)
 #endif
 return -1;
 }
-pos = ((asp->current-1)*asp->rec_len) + asp->header_len + asp->current;
+pos = ((asp->current-1)*asp->rec_len) + asp->header_len;
 fseek(o,pos,SEEK_SET);
 fputc(' ',o);
 fclose(o);
@@ -119,7 +119,7 @@ if( (a = fopen(asp->name,"rb")) == NULL)
 #endif
 	return -2;
 }
-pos = ((asp->current-1)*asp->rec_len) + asp->header_len + asp->current;
+pos = ((asp->current-1)*asp->rec_len) + asp->header_len;
 fseek(a,pos,SEEK_SET);
 b=getc(a);
 fclose(a);
@@ -149,17 +149,17 @@ if( (h = fopen(asp->name,"rb")) == NULL)
 	return -1;
 if ( (j = fopen(nomb_tmp,"wb")) == NULL)
 	return -1;
-for(mas = 1; mas <= (asp->header_len+1); ++mas)
+for(mas = 1; mas <= asp->header_len; ++mas)
 {
 	putc(getc(h),j);
 }
 for(i=1; i<= pos; ++i)
 {
 if( is_deleted(asp) == VERITAS){
-fseek(h,asp->rec_len+1,SEEK_CUR);
+fseek(h,asp->rec_len,SEEK_CUR);
 estos++;
 }else{
-for( mas=0; mas < (asp->rec_len+1); ++mas)
+for( mas=0; mas < asp->rec_len; ++mas)
 fputc(getc(h),j);
 }
 skip(&asp);
@@ -183,8 +183,8 @@ fputc(r3,j);
 fputc(r4,j);
 if( rec_count == 0)
 {
-fseek(j,asp->header_len+1,SEEK_SET);
-for(mas=0; mas <= asp->rec_len; ++mas)
+fseek(j,asp->header_len,SEEK_SET);
+for(mas=0; mas < asp->rec_len; ++mas)
 fputc(' ',j);
 }
 }
@@ -274,7 +274,7 @@ int pack_db_with_dbt_file(DATABASEDBF *asp, char *_na)
 	}
 
 	/* Copy db header to temp file */
-	for (contador = 1; contador <= (asp->header_len + 1); ++contador)
+	for (contador = 1; contador <= asp->header_len; ++contador)
 		fputc(fgetc(input), output);
 
 	/* Read and copy dbt header to temp2 file */
@@ -348,13 +348,13 @@ int pack_db_with_dbt_file(DATABASEDBF *asp, char *_na)
 	{
 		if (is_deleted(asp) == VERITAS)
 		{
-			fseek(input, (asp->rec_len + 1), SEEK_CUR);
+			fseek(input, asp->rec_len, SEEK_CUR);
 		}
 		else
 		{
 			surviving++;
 			/* Copy the record byte-by-byte from input to output */
-			for (c2 = 0; c2 < (asp->rec_len + 1); c2++)
+			for (c2 = 0; c2 < asp->rec_len; c2++)
 				fputc(fgetc(input), output);
 
 			/* Remap memo block numbers in the output file */
@@ -363,8 +363,8 @@ int pack_db_with_dbt_file(DATABASEDBF *asp, char *_na)
 				if (asp->fields.tipos[c2] == 'M')
 				{
 					/* Calculate position of this memo field in the output file */
-					int pos = (asp->header_len + 1); /* After header + 0x0D */
-					pos += (surviving - 1) * (asp->rec_len + 1); /* Record start */
+					int pos = asp->header_len; /* After header */
+					pos += (surviving - 1) * asp->rec_len; /* Record start */
 
 					/* Offset to this field within the record */
 					int field_offset = 1; /* Skip delete flag byte */
@@ -418,8 +418,8 @@ int pack_db_with_dbt_file(DATABASEDBF *asp, char *_na)
 		fputc(r4, output);
 		if (rec_count == 0)
 		{
-			fseek(output, asp->header_len + 1, SEEK_SET);
-			for (c2 = 0; c2 <= asp->rec_len; ++c2)
+			fseek(output, asp->header_len, SEEK_SET);
+			for (c2 = 0; c2 < asp->rec_len; ++c2)
 				fputc(' ', output);
 		}
 	}

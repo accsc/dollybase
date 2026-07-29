@@ -39,7 +39,7 @@ asp->rec_len =0;
 		free(asp);
 		return;
 	}
-asp->header_len = 1;
+asp->header_len = 0;
 switch( getc(data) ){
 case 0x02: fprintf(stderr,"dBASE II/FoxBASE Database, DB II supported not tested yet\n"); break;
 case 0x03: asp->tipo= 1; break;
@@ -75,7 +75,7 @@ else if( year > 99)
 snprintf(asp->date,10,"%i/%i/2%i",day,mes,year);
 else
 snprintf(asp->date,10,"%i/%i/200%i",day,mes,year);
-asp->header_len=asp->header_len+7;
+/* header_len and rec_len will be read from header offsets 8-11 */
 /*asp->recnos = getc(data)+(getc(data)*256)+(getc(data)*65536)+(getc(data)*16777216); */
 u[0] = getc(data);
 u[1] = getc(data);
@@ -96,10 +96,17 @@ if( asp->recnos < 0)
 if( asp->recnos < 0)
 	asp->recnos = 0;
 
-for( con = 1; con <= 8; con++)
+/* Read header_len and rec_len from header (offsets 8-11) */
 {
+int hl0 = getc(data);
+int hl1 = getc(data);
+asp->header_len = hl0 + (hl1 * 256);
+int rl0 = getc(data);
+int rl1 = getc(data);
+asp->rec_len = rl0 + (rl1 * 256);
+/* Skip remaining 4 bytes of the 8-byte block (offsets 12-15) */
+for( con = 1; con <= 4; con++)
 getc(data);
-++asp->header_len;
 }
 if(getc(data) == 0x01)
 {
@@ -111,9 +118,7 @@ fflush(stderr);
 for( con = 1; con<= 12+1; con ++)
 {
 getc(data);
-++asp->header_len;
 }
-++asp->header_len;
 if( getc(data) != 0x00)
 {
 #ifdef DEBUG
@@ -121,8 +126,7 @@ fprintf(stderr,"The database is foxpro and use codepages, the codepages will be 
 fflush(stderr);
 #endif
 }
-printf("%c",getc(data));
-++asp->header_len;
+getc(data);
 prun = 0;
 do{
 ++conter;
@@ -139,7 +143,6 @@ if( conter == MAX_HEAD)
 }
 asp->camposn=prun;
 runn = getc(data);
-++asp->header_len;
 if ( runn == 0x0D)
 {
 	asp->current = 1;
@@ -152,26 +155,20 @@ prun++;
 asp->fields.names[0][prun] = runn; 
 for( con = 1; con <= 10; ++con)
 { 
-++asp->header_len;
 asp->fields.names[con][prun] = getc(data);
 } 
-++asp->header_len;
+asp->fields.names[11][prun] = '\0';
 asp->fields.tipos[prun] = getc(data); 
 for(con = 1; con <= 4; con++)
 {
 getc(data);
-++asp->header_len;
 }
 zise = getc(data);
-asp->rec_len = asp->rec_len + zise;
 asp->fields.longitudes[prun] = zise; 
 asp->fields.decimales[prun] = getc(data);
-++asp->header_len;
-++asp->header_len;
 for(con = 1; con <= 14; con++)
 {
 runn = getc(data);
-++asp->header_len;
 }
 }while( runn != 0x0D || conter == MAX_HEAD);
 
@@ -204,7 +201,7 @@ tr=0;
 	{	
 	falta = 0;
 	printf("%5i  ",i);
-		for(i2 = 0; i2<= 11; ++i2)
+		for(i2 = 0; i2<= 10; ++i2)
 		{
 		if( asp->fields.names[i2][i] == 0)
 		fprintf(stdout," ");

@@ -32,15 +32,15 @@ fputc(dos,a);
 fputc(tres,a);
 fputc(cuatro,a);
 
-fseek(a,-1,SEEK_END);
+fseek(a,0,SEEK_END);
 
 #ifdef DEBUG
 	fprintf(stderr,"appends. Reccount updated.\n"); 
 	fprintf(stderr,"appends. Adding %i blanks at end\n",(**asp).rec_len);
 	fflush(stderr);
 #endif
-	
-for(u = 0; u <= (**asp).rec_len; ++u)
+
+for(u = 0; u < (**asp).rec_len; ++u)
 fputc(' ',a);
 fflush(a);
 fclose(a);

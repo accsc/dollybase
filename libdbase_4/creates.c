@@ -31,10 +31,12 @@ int create_database(char *_name,int day, int month, int year,
 		DATABASEDBF *db_struc, int multi)
 {
 FILE *new_db;
-int contador, rec_len, cont, cont2;
+int contador, cont, cont2;
 char chr;
-char *header;
+char header[32];
 int has_memo = 0;
+int num_fields;
+int rec_len;
 
 /* Scan fields for memo type before writing header */
 for( contador = 1; contador <= db_struc->camposn; ++contador)
@@ -46,68 +48,59 @@ for( contador = 1; contador <= db_struc->camposn; ++contador)
 	}
 }
 
-if ( (header = (char *) malloc (34)) == NULL )
-{
-	fprintf(stderr,"Creates error. Sin memoria.\n");
-	fflush(stderr);
-	return -1;
-}
-
 	if( access(_name,F_OK) == 0)
 	{
 #ifdef DEBUG
 		fprintf(stderr,"File already exist, wont be overwritten\n");
 		fflush(stderr);
 #endif
-		free(header);
 		return -3;
-	}if( (new_db = fopen(_name,"wb")) == NULL)
+	}
+	if( (new_db = fopen(_name,"wb")) == NULL)
 	{
 #ifdef DEBUG
 		fprintf(stderr,"fopen: Cant open file for make a new db\n");
 		fflush(stderr);
 #endif
-		free(header);
 		return -2;
 	}
-/***************************** Head stuff *********************************/
 
-	header[0] = has_memo ? 0x83 : 0x03; /* 0x83 = DBF with DBT memo */
-	header[1] = year;  /* Ex: 0 for 2000 or 7 for 2007 */
-	header[2] = month; /* 1-12 */
-	header[3] = day; /* 1-31 */
+/***************************** Fixed header (32 bytes) *********************/
 
-	/* Number of records. New DB has 0 recs */
-	header[4] = 0x00;
-	header[5] = 0x00;
-	header[6] = 0x00;
-	header[7] = 0x00;
-
-	/* header[30] for codepages, header[16] for encryption(0x01 or 0x00) */
-	for( contador = 8; contador <=32; contador++)
-		header[contador] = 0x00;
-	
-	/* DBF header padding bytes */
-	header[8] = 0xE1;
-	header[10] = 0x87; 
-	
-	/* Write header to db */
-	fwrite(header,1,31,new_db);
-	free(header);
-	fclose(new_db);	
-/*************************** End of head stuff *****************************/
-
-	if( (new_db = fopen(_name,"a")) == NULL)
+	/* Calculate header_len and rec_len */
+	num_fields = db_struc->camposn + (multi ? 1 : 0);
+	rec_len = 1; /* delete flag byte */
+	for( contador = 1; contador <= db_struc->camposn; ++contador)
 	{
-#ifdef DEBUG
-		fprintf(stderr,"Failed to reopen file after header\n");
-		fflush(stderr);
-#endif
-		return -4;
+		if (db_struc->fields.tipos[contador] == 'M')
+			rec_len += 10;
+		else
+			rec_len += db_struc->fields.longitudes[contador];
 	}
-	
-/****************************** Fields stuff *******************************/
-	fputc(' ',new_db);
+	if (multi)
+		rec_len += 2; /* _DBFLOCK field length */
+
+	/* header_len = 32 (fixed) + 32 * num_fields + 1 (0x0D terminator) */
+	int header_len = 32 + 32 * num_fields + 1;
+
+	/* Build the 32-byte fixed header */
+	memset(header, 0, 32);
+	header[0] = has_memo ? 0x83 : 0x03;
+	header[1] = year;
+	header[2] = month;
+	header[3] = day;
+	/* Record count = 0 (bytes 4-7 already zeroed) */
+	/* header_len LE at bytes 8-9 */
+	header[8] = header_len & 0xFF;
+	header[9] = (header_len >> 8) & 0xFF;
+	/* rec_len LE at bytes 10-11 */
+	header[10] = rec_len & 0xFF;
+	header[11] = (rec_len >> 8) & 0xFF;
+	/* Bytes 12-31 are zero (reserved) */
+
+	fwrite(header, 1, 32, new_db);
+
+/****************************** Field descriptors **************************/
 	/*********** Add LOCK field - Optional ******************/
 	if( multi == 1)
 	{
@@ -115,25 +108,20 @@ if ( (header = (char *) malloc (34)) == NULL )
 		fprintf(stderr,"CREATE. _DBFLOCK field added\n");
 		fflush(stderr);
 #endif
-		fputc('_',new_db);
-		fputc('D',new_db);
-		fputc('B',new_db);
-		fputc('F',new_db);
-		fputc('L',new_db);
-		fputc('O',new_db);
-		fputc('C',new_db);
-		fputc('K',new_db);
-		fputc(0x00,new_db);
-		fputc(0x00,new_db);
-		fputc(0x00,new_db);
-		fputc('N',new_db);
-		fputc(0x00,new_db);
-		fputc(0x00,new_db);
-		fputc('%',new_db);
-		fputc('F',new_db);
-		fputc(2,new_db);
-		for( cont2 = 1; cont2 <=15; ++cont2)
-		fputc(0x00,new_db);
+		/* Name: _DBFLOCK (11 bytes, zero-padded) */
+		{
+		const char lockname[11] = {'_','D','B','F','L','O','C','K',0,0,0};
+		fwrite(lockname, 1, 11, new_db);
+		}
+		fputc('N', new_db);          /* type */
+		fputc(0x00, new_db);         /* reserved */
+		fputc(0x00, new_db);         /* reserved */
+		fputc(0x00, new_db);         /* reserved */
+		fputc(0x00, new_db);         /* reserved */
+		fputc(2, new_db);            /* field length */
+		fputc(0, new_db);            /* decimal count */
+		for( cont2 = 1; cont2 <= 14; ++cont2)
+			fputc(0x00, new_db);     /* rest (14 bytes) */
 	}
 
  	/******************* End of LOCK field *****************/
@@ -141,31 +129,38 @@ if ( (header = (char *) malloc (34)) == NULL )
 		
 	for( contador = 1; contador <= db_struc->camposn; ++contador)
 	{
-		for( cont = 1; cont <= 11; cont++)
+		/* Field name (11 bytes) */
+		for( cont = 0; cont <= 10; cont++)
 		{
-			chr = db_struc->fields.names[cont-1][contador];
-			fputc(chr,new_db);
+			chr = db_struc->fields.names[cont][contador];
+			fputc(chr, new_db);
 		}
 
-		fputc(db_struc->fields.tipos[contador],new_db);
+		/* Field type */
+		fputc(db_struc->fields.tipos[contador], new_db);
+
+		/* Reserved (4 bytes) */
+		fputc(0x00, new_db);
+		fputc(0x00, new_db);
+		fputc(0x00, new_db);
+		fputc(0x00, new_db);
+
+		/* Field length */
 		if( db_struc->fields.tipos[contador] == 'M')
-		{
-			db_struc->fields.longitudes[contador] = 10;
-		}
-		fputc(0x00,new_db);
-		fputc(0x00,new_db);
-		fputc('%',new_db);
-		fputc('F',new_db);
-		fputc(db_struc->fields.longitudes[contador],new_db);
-		
-		fputc(db_struc->fields.decimales[contador],new_db);
+			fputc(10, new_db);
+		else
+			fputc(db_struc->fields.longitudes[contador], new_db);
+
+		/* Decimal count */
+		fputc(db_struc->fields.decimales[contador], new_db);
+
+		/* Rest (14 bytes) */
 		for( cont2 = 1; cont2 <= 14; ++cont2)
-		fputc(0x00,new_db);
-		
+			fputc(0x00, new_db);
 	}
-	
-	fputc(0x0D,new_db); /****** Very important ********/
-	fputc(0xA1,new_db);
+
+	/* Header terminator */
+	fputc(0x0D, new_db);
 	fflush(new_db);
 /*************************** End of Fields stuff **************************/
 	fclose(new_db);

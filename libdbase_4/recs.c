@@ -15,11 +15,11 @@ char *aquello;
 aquello = (char *) malloc(257);
 if( campon <=128)
 {
-	for(ui = 0; ui<= 11; ++ui)
+	for(ui = 0; ui<= 10; ++ui)
 	{
 		aquello[ui] = asp->fields.names[ui][campon];
 	}
-	aquello[12] = '\0'; /* Null-terminate the 12-char field name */
+	aquello[11] = '\0'; /* Null-terminate the 11-char field name */
 	strcpy(*name,aquello);
 }else{
 free(aquello);
@@ -135,7 +135,7 @@ if( (a = fopen(asp->name,"rb")) == NULL)
 
 if( asp->current == 0)
 asp->current = 1;
-pos = ((asp->current-1)*asp->rec_len) + asp->header_len + asp->current;
+pos = ((asp->current-1)*asp->rec_len) + asp->header_len;
 for(i = 1; i< number; ++i)
 pos = pos + asp->fields.longitudes[i];
 ++pos;
@@ -238,7 +238,7 @@ if( asp->fields.tipos[x] == 'M')
 	free(me);
 }else{
 
-pos = ((asp->current-1)*asp->rec_len) + asp->header_len + asp->current ;
+pos = ((asp->current-1)*asp->rec_len) + asp->header_len;
 
 #ifdef DEBUG
 	fprintf(stderr,"replace.Pre-Position: %i\n",pos);
@@ -626,7 +626,7 @@ if( (a = fopen(asp->name,"rb")) == NULL)
 
 if( asp->current == 0)
 asp->current = 1;
-pos = ((asp->current-1)*asp->rec_len) + asp->header_len + asp->current;
+pos = ((asp->current-1)*asp->rec_len) + asp->header_len;
 for(i = 1; i< number; ++i)
 pos = pos + asp->fields.longitudes[i];
 ++pos;
@@ -676,7 +676,7 @@ x = field_to_number(asp,campo);
 	fflush(stderr);
 #endif
 
-pos = ((asp->current-1)*asp->rec_len) + asp->header_len + asp->current ;
+pos = ((asp->current-1)*asp->rec_len) + asp->header_len;
 
 #ifdef DEBUG
 	fprintf(stderr,"replace.Pre-Position: %i\n",pos);

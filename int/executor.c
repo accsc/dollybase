@@ -2199,14 +2199,14 @@ static ExecStatus exec_display(Token **cur)
 
             /* Fields */
             for (int i = 1; i <= db->camposn; i++) {
-                char fname[13] = "";
-                for (int j = 0; j <= 11; j++) {
+                char fname[12] = "";
+                for (int j = 0; j <= 10; j++) {
                     if (db->fields.names[j][i])
                         fname[j] = db->fields.names[j][i];
                     else
                         fname[j] = ' ';
                 }
-                fname[12] = '\0';
+                fname[11] = '\0';
                 total_size += db->fields.longitudes[i];
 
                 snprintf(line, sizeof(line), "%5d  %-12s%c      %2d%s",

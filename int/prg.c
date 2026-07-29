@@ -104,6 +104,7 @@ static void show_splash(void)
     mvaddstr(1, 22, date_str);
     mvaddstr(1, 34, time_str);
     mvaddstr(2, 0, "by Alvaro Cortes <alvarocortesc@gmail.com> - GPLv2");
+    mvaddstr(3, 0, ""); /* position cursor below splash for ? output */
     refresh();
 }
 

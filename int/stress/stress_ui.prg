@@ -51,4 +51,3 @@ READ
 READ
 @ 17,1 SAY "A=" + mA + " B=" + mB + " C=" + mC
 
-QUIT

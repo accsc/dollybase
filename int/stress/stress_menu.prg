@@ -90,4 +90,3 @@ DO WHILE .T.
     @ 19,10 SAY "+" + REPLICATE("-", 38) + "+"
 ENDDO
 
-QUIT

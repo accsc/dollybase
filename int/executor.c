@@ -840,9 +840,28 @@ static ExecStatus exec_do_while(Token **cur)
         free_value(&cond);
     }
 
-    /* Consume ENDDO if present (exec_do_body may have left us at it) */
-    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO) {
-        *cur = (*cur)->next;
+    /* If the loop body was never entered (condition initially false),
+       we must skip past the body to the matching ENDDO and consume it.
+       Track nesting depth to handle nested DO WHILE inside the body. */
+    if (!truthy || (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO)) {
+        int depth = 1;
+        while (*cur && (*cur)->type != TOK_EOF) {
+            if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_DO) {
+                /* Check if this is a DO WHILE (not DO CASE or DO <name>) */
+                Token *peek = (*cur)->next;
+                if (peek && peek->type == TOK_KEYWORD && peek->keyword_id == KW_WHILE) {
+                    depth++;
+                }
+            }
+            if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO) {
+                depth--;
+                if (depth == 0) {
+                    *cur = (*cur)->next; /* consume matching ENDDO */
+                    break;
+                }
+            }
+            *cur = (*cur)->next;
+        }
     }
 
     return EXEC_OK;

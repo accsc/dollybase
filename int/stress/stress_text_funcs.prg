@@ -199,4 +199,3 @@ N = 4
 ? "LEFT(RIGHT(HelloWorld,5),3):", LEFT(RIGHT("HelloWorld", 5), 3)
 ? "RIGHT(LEFT(HelloWorld,5),3):", RIGHT(LEFT("HelloWorld", 5), 3)
 
-QUIT

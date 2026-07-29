@@ -172,6 +172,7 @@ static ExecStatus exec_close(Token **cur);
 static ExecStatus exec_go(Token **cur);
 static ExecStatus exec_print(Token **cur);
 static ExecStatus exec_assign(Token **cur);
+static ExecStatus exec_accept(Token **cur);
 static ExecStatus exec_delete(Token **cur);
 static ExecStatus exec_recall(Token **cur);
 static ExecStatus exec_pack(Token **cur);
@@ -363,6 +364,7 @@ static ExecStatus exec_statement(Token **cur)
             case KW_WAIT:     return exec_wait(cur);
             case KW_ZAP:      return exec_zap(cur);
             case KW_REPLACE:  return exec_replace(cur);
+            case KW_ACCEPT:   return exec_accept(cur);
             case KW_APPEND:   return exec_append(cur);
             case KW_DISPLAY:  return exec_display(cur);
             case KW_LIST:     return exec_list(cur);
@@ -1676,6 +1678,65 @@ static ExecStatus exec_pack(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "PACK" */
     wa_pack();
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* ACCEPT "prompt" TO varname                                          */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_accept(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "ACCEPT" */
+
+    /* Parse optional prompt expression */
+    char msg[256] = "";
+    if (*cur && !is_eol_or_eof(*cur)) {
+        ExprValue val = parse_expr(cur);
+        char *s = val_to_string(&val);
+        strncpy(msg, s, sizeof(msg) - 1);
+        msg[sizeof(msg) - 1] = '\0';
+        free(s);
+        free_value(&val);
+    }
+
+    /* Expect TO */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_TO) {
+        (*cur) = (*cur)->next; /* skip TO */
+    }
+
+    /* Expect variable name */
+    if (*cur && (*cur)->type == TOK_IDENT) {
+        char *varname = (*cur)->value;
+        (*cur) = (*cur)->next;
+
+        /* Read input from user */
+        char buf[256] = "";
+        if (ui_is_active()) {
+            nodelay(stdscr, FALSE);
+            addstr(msg);
+            refresh();
+            echo();
+            getnstr(buf, sizeof(buf) - 1);
+            noecho();
+            addch('\n');
+            refresh();
+        } else {
+            printf("%s", msg);
+            fflush(stdout);
+            if (fgets(buf, sizeof(buf), stdin)) {
+                /* Strip trailing newline */
+                size_t len = strlen(buf);
+                if (len > 0 && buf[len - 1] == '\n')
+                    buf[len - 1] = '\0';
+            }
+        }
+        ExprValue v = val_string(buf);
+        vars_set(varname, &v);
+        free_value(&v);
+    }
+
     skip_to_eol(cur);
     return EXEC_OK;
 }

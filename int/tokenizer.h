@@ -70,6 +70,7 @@ typedef enum {
     KW_WITH,
 
     /* Database commands */
+    KW_ACCEPT,
     KW_ALL,
     KW_ALIAS,
     KW_DBF,

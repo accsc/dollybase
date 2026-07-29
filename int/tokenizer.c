@@ -23,6 +23,7 @@ typedef struct {
 
 static const KeywordEntry KEYWORDS[] = {
     {"ABS",          KW_ABS},
+    {"ACCEPT",       KW_ACCEPT},
     {"ACTIVATE",     KW_ACTIVATE},
     {"ALIAS",        KW_ALIAS},
     {"ALL",          KW_ALL},

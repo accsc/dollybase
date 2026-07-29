@@ -17,7 +17,7 @@ DATABASEDBF *wa_db(void);          // Current DBF pointer (NULL if none open).
 DATABASEDBF **wa_db_ptr(void);     // Double pointer for skip()/gotos().
 
 /* USE / CLOSE */
-int  wa_use(const char *filename, int area);  // area < 0 = next free. Returns 0 on success.
+int  wa_use(const char *filename, int area, const char *alias);  // area < 0 = next free, alias can be NULL. Returns 0 on success.
 void wa_close(int area);                      // Close specific area (0-based).
 void wa_close_all(void);                      // Close all areas.
 

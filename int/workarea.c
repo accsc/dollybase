@@ -29,6 +29,9 @@ typedef struct {
 
 static LocateState locate_states[MAX_WORK_AREAS];
 
+/* Per-work-area custom alias (set via USE ... ALIAS name) */
+static char *custom_aliases[MAX_WORK_AREAS];
+
 /* ------------------------------------------------------------------ */
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
@@ -37,8 +40,10 @@ void wa_init(void)
 {
     memset(areas, 0, sizeof(areas));
     memset(idx_states, 0, sizeof(idx_states));
-    for (int i = 0; i < MAX_WORK_AREAS; i++)
+    for (int i = 0; i < MAX_WORK_AREAS; i++) {
         idx_states[i].type = -1;
+        custom_aliases[i] = NULL;
+    }
     selected = 0;
 }
 
@@ -49,6 +54,8 @@ void wa_shutdown(void)
             free(areas[i]);
             areas[i] = NULL;
         }
+        free(custom_aliases[i]);
+        custom_aliases[i] = NULL;
     }
     selected = 0;
 }
@@ -87,7 +94,7 @@ DATABASEDBF **wa_db_ptr(void)
 /* USE / CLOSE                                                         */
 /* ------------------------------------------------------------------ */
 
-int wa_use(const char *filename, int area)
+int wa_use(const char *filename, int area, const char *alias)
 {
     char path[1024];
     if (strchr(filename, '.') == NULL) {
@@ -116,6 +123,8 @@ int wa_use(const char *filename, int area)
             free(areas[idx]);
             areas[idx] = NULL;
         }
+        free(custom_aliases[idx]);
+        custom_aliases[idx] = NULL;
     }
 
     DATABASEDBF *db = calloc(1, sizeof(DATABASEDBF));
@@ -135,6 +144,14 @@ int wa_use(const char *filename, int area)
     }
     areas[idx] = db;
     selected = idx;
+
+    /* Set custom alias */
+    if (alias && *alias) {
+        custom_aliases[idx] = strdup(alias);
+    } else {
+        custom_aliases[idx] = NULL;
+    }
+
     return 0;
 }
 
@@ -145,6 +162,8 @@ void wa_close(int area)
             free(areas[area]);
             areas[area] = NULL;
         }
+        free(custom_aliases[area]);
+        custom_aliases[area] = NULL;
         if (area == selected)
             selected = 0;
     }
@@ -157,6 +176,8 @@ void wa_close_all(void)
             free(areas[i]);
             areas[i] = NULL;
         }
+        free(custom_aliases[i]);
+        custom_aliases[i] = NULL;
     }
     selected = 0;
 }
@@ -296,7 +317,7 @@ int wa_pack(void)
 
     /* Close and re-open to reload header (recnos changed on disk) */
     wa_close(sel);
-    wa_use(db_name, sel);
+    wa_use(db_name, sel, custom_aliases[sel]);
     wa_goto(saved_rec);
     if (wa_eof())
         wa_goto_bottom();
@@ -405,12 +426,22 @@ int wa_replace(const char *fieldname, const char *value)
 
 char *wa_dbf_name(void)
 {
+    int idx = selected;
+    /* If custom alias is set, return it */
+    if (custom_aliases[idx])
+        return strdup(custom_aliases[idx]);
+
     DATABASEDBF *db = wa_db();
     if (!db) return strdup("");
     char *name = NULL;
     DBF(db, &name);
-    if (name)
+    if (name) {
+        /* Strip .dbf extension for ALIAS() — dBASE returns name without extension */
+        char *dot = strrchr(name, '.');
+        if (dot)
+            *dot = '\0';
         return name;
+    }
     return strdup("");
 }
 
@@ -429,6 +460,12 @@ int wa_alias_to_area(const char *alias)
             if (areas[idx])
                 return idx;
         }
+    }
+
+    /* Try matching against custom aliases first (case-insensitive) */
+    for (int i = 0; i < MAX_WORK_AREAS; i++) {
+        if (areas[i] && custom_aliases[i] && strcasecmp(custom_aliases[i], alias) == 0)
+            return i;
     }
 
     /* Try matching against DBF names (case-insensitive) */

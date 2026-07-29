@@ -1329,7 +1329,60 @@ static ExecStatus exec_use(Token **cur)
         return EXEC_OK;
     }
 
-    wa_use(filename, -1);
+    /* Parse optional INDEX tag1,tag2,... */
+    char index_tags[1024] = {0};
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_INDEX) {
+        *cur = (*cur)->next; /* skip "INDEX" */
+        /* Collect comma-separated tag names until ALIAS or EOL */
+        while (*cur && (*cur)->type != TOK_EOL && (*cur)->type != TOK_EOF
+               && !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ALIAS)) {
+            if (*cur && (*cur)->type == TOK_IDENT) {
+                if (index_tags[0]) strcat(index_tags, ",");
+                strcat(index_tags, (*cur)->value);
+                *cur = (*cur)->next;
+                /* Skip comma if present */
+                if (*cur && (*cur)->type == TOK_COMMA)
+                    *cur = (*cur)->next;
+            } else {
+                *cur = (*cur)->next;
+            }
+        }
+    }
+
+    /* Parse optional ALIAS name */
+    char alias_name[1024] = {0};
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ALIAS) {
+        *cur = (*cur)->next; /* skip "ALIAS" */
+        if (*cur && (*cur)->type == TOK_IDENT) {
+            strncpy(alias_name, (*cur)->value, sizeof(alias_name) - 1);
+            alias_name[sizeof(alias_name) - 1] = '\0';
+            *cur = (*cur)->next;
+        }
+    }
+
+    wa_use(filename, -1, alias_name[0] ? alias_name : NULL);
+
+    /* Set indexes if specified */
+    if (index_tags[0]) {
+        /* Parse comma-separated tags and set them via SET INDEX TO */
+        char *saveptr = NULL;
+        char *tag = strtok_r(index_tags, ",", &saveptr);
+        char combined[1024] = "";
+        while (tag) {
+            /* Trim leading/trailing spaces */
+            while (*tag == ' ') tag++;
+            char *end = tag + strlen(tag) - 1;
+            while (end > tag && *end == ' ') *end = '\0';
+
+            if (combined[0]) strcat(combined, " ");
+            strcat(combined, tag);
+            tag = strtok_r(NULL, ",", &saveptr);
+        }
+        if (combined[0]) {
+            wa_set_index(combined);
+        }
+    }
+
     skip_to_eol(cur);
     return EXEC_OK;
 }

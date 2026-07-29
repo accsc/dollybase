@@ -52,9 +52,13 @@ static ExprValue builtin_trim(Token **cur, ParseError *err);
 static ExprValue builtin_ltrim(Token **cur, ParseError *err);
 static ExprValue builtin_rtrim(Token **cur, ParseError *err);
 static ExprValue builtin_substr(Token **cur, ParseError *err);
+static ExprValue builtin_stuff(Token **cur, ParseError *err);
 static ExprValue builtin_left_func(Token **cur, ParseError *err);
 static ExprValue builtin_right_func(Token **cur, ParseError *err);
 static ExprValue builtin_iif(Token **cur, ParseError *err);
+static ExprValue builtin_isalpha(Token **cur, ParseError *err);
+static ExprValue builtin_islower(Token **cur, ParseError *err);
+static ExprValue builtin_isupper(Token **cur, ParseError *err);
 static ExprValue builtin_inkey(Token **cur, ParseError *err);
 static ExprValue builtin_empty(Token **cur, ParseError *err);
 static ExprValue builtin_type(Token **cur, ParseError *err);
@@ -77,6 +81,7 @@ static ExprValue builtin_found(Token **cur, ParseError *err);
 static ExprValue builtin_sign(Token **cur, ParseError *err);
 static ExprValue builtin_max(Token **cur, ParseError *err);
 static ExprValue builtin_min(Token **cur, ParseError *err);
+static ExprValue builtin_replicate(Token **cur, ParseError *err);
 static ExprValue builtin_space(Token **cur, ParseError *err);
 static ExprValue builtin_chr(Token **cur, ParseError *err);
 static ExprValue builtin_asc(Token **cur, ParseError *err);
@@ -719,6 +724,9 @@ static const FuncEntry func_table[] = {
     { KW_EOF,       builtin_eof },
     { KW_FOUND,     builtin_found },
     { KW_IIF,       builtin_iif },
+    { KW_ISALPHA,   builtin_isalpha },
+    { KW_ISLOWER,   builtin_islower },
+    { KW_ISUPPER,   builtin_isupper },
     { KW_INKEY,     builtin_inkey },
     { KW_INT_FUNC,  builtin_int_func },
     { KW_LEFT_FUNC, builtin_left_func },
@@ -735,8 +743,10 @@ static const FuncEntry func_table[] = {
     { KW_RTRIM,     builtin_rtrim },
     { KW_SIGN,      builtin_sign },
     { KW_SQRT,      builtin_sqrt },
+    { KW_REPLICATE, builtin_replicate },
     { KW_SPACE,     builtin_space },
     { KW_SUBSTR,    builtin_substr },
+    { KW_STUFF,     builtin_stuff },
     { KW_TYPE,      builtin_type },
     { KW_UPPER,     builtin_upper },
     { KW_TRIM,      builtin_trim },
@@ -991,6 +1001,82 @@ static ExprValue builtin_substr(Token **cur, ParseError *err) {
     return res;
 }
 
+/* ------------------------------------------------------------------ */
+/* STUFF(cSource, nStart, nLength, cInsert)                            */
+/*   Replaces nLength characters in cSource starting at nStart         */
+/*   with cInsert.  nStart is 1-indexed.                               */
+/* ------------------------------------------------------------------ */
+
+static ExprValue builtin_stuff(Token **cur, ParseError *err)
+{
+    ExprValue src_val = parse_expression(cur, err);
+    if (*err != PARSE_OK) return src_val;
+    skip_comma(cur);
+    ExprValue start_arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) { free_value(&src_val); return start_arg; }
+    skip_comma(cur);
+    ExprValue len_arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) { free_value(&src_val); free_value(&start_arg); return len_arg; }
+    skip_comma(cur);
+    ExprValue ins_val = parse_expression(cur, err);
+    if (*err != PARSE_OK) { free_value(&src_val); free_value(&start_arg); free_value(&len_arg); return ins_val; }
+
+    int start = val_to_int(&start_arg);
+    free_value(&start_arg);
+    int nlen = val_to_int(&len_arg);
+    free_value(&len_arg);
+    if (start < 1) start = 1;
+    if (nlen < 0) nlen = 0;
+
+    char *src = val_to_string(&src_val);
+    free_value(&src_val);
+    char *ins = val_to_string(&ins_val);
+    free_value(&ins_val);
+
+    int slen = (int)strlen(src);
+    int ilen = (int)strlen(ins);
+
+    /* Clamp start to string length + 1 (append if past end) */
+    if (start > slen + 1) start = slen + 1;
+
+    /* Clamp nlen so we don't remove past end of string */
+    int remove_end = start - 1 + nlen;
+    if (remove_end > slen) remove_end = slen;
+
+    /* Build result: prefix + insert + suffix */
+    int prefix_len = start - 1;
+    int suffix_len = slen - (remove_end - start + 1);
+    if (suffix_len < 0) suffix_len = 0;
+    int total = prefix_len + ilen + suffix_len;
+
+    char *buf = (char *)malloc(total + 1);
+    if (buf) {
+        int p = 0;
+        /* Prefix */
+        if (prefix_len > 0) {
+            memcpy(buf + p, src, prefix_len);
+            p += prefix_len;
+        }
+        /* Insert */
+        if (ilen > 0) {
+            memcpy(buf + p, ins, ilen);
+            p += ilen;
+        }
+        /* Suffix */
+        if (suffix_len > 0) {
+            memcpy(buf + p, src + remove_end, suffix_len);
+            p += suffix_len;
+        }
+        buf[p] = '\0';
+    }
+    free(src);
+    free(ins);
+
+    ExprValue res = val_string(buf ? buf : "");
+    free(buf);
+    return res;
+}
+
 static ExprValue builtin_left_func(Token **cur, ParseError *err) {
     ExprValue str = parse_expression(cur, err);
     if (*err != PARSE_OK) return str;
@@ -1069,6 +1155,60 @@ static ExprValue builtin_iif(Token **cur, ParseError *err) {
         free_value(&true_val);
         return false_val;
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* ISALPHA(cString) — .T. if first character is alphabetic              */
+/* ------------------------------------------------------------------ */
+
+static ExprValue builtin_isalpha(Token **cur, ParseError *err)
+{
+    ExprValue arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) return arg;
+    char *s = val_to_string(&arg);
+    free_value(&arg);
+    int result = 0;
+    if (s[0]) {
+        result = isalpha((unsigned char)s[0]);
+    }
+    free(s);
+    return val_logical(result);
+}
+
+/* ------------------------------------------------------------------ */
+/* ISLOWER(cString) — .T. if first character is lowercase               */
+/* ------------------------------------------------------------------ */
+
+static ExprValue builtin_islower(Token **cur, ParseError *err)
+{
+    ExprValue arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) return arg;
+    char *s = val_to_string(&arg);
+    free_value(&arg);
+    int result = 0;
+    if (s[0]) {
+        result = islower((unsigned char)s[0]);
+    }
+    free(s);
+    return val_logical(result);
+}
+
+/* ------------------------------------------------------------------ */
+/* ISUPPER(cString) — .T. if first character is uppercase               */
+/* ------------------------------------------------------------------ */
+
+static ExprValue builtin_isupper(Token **cur, ParseError *err)
+{
+    ExprValue arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) return arg;
+    char *s = val_to_string(&arg);
+    free_value(&arg);
+    int result = 0;
+    if (s[0]) {
+        result = isupper((unsigned char)s[0]);
+    }
+    free(s);
+    return val_logical(result);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1392,14 +1532,41 @@ static ExprValue builtin_min(Token **cur, ParseError *err) {
     return val_real(va < vb ? va : vb);
 }
 
+static ExprValue builtin_replicate(Token **cur, ParseError *err) {
+    ExprValue ch = parse_expression(cur, err);
+    if (*err != PARSE_OK) return ch;
+    skip_comma(cur);
+    ExprValue n_arg = parse_expression(cur, err);
+    if (*err != PARSE_OK) { free_value(&ch); return n_arg; }
+
+    int n = val_to_int(&n_arg);
+    free_value(&n_arg);
+    if (n < 0) n = 0;
+
+    char *s = val_to_string(&ch);
+    free_value(&ch);
+    int c = s[0] ? (unsigned char)s[0] : ' ';
+    free(s);
+
+    char *buf = (char *)malloc(n + 1);
+    if (!buf) return val_string("");
+    memset(buf, c, n);
+    buf[n] = '\0';
+    ExprValue res = val_string(buf);
+    free(buf);
+    return res;
+}
+
 static ExprValue builtin_space(Token **cur, ParseError *err) {
     ExprValue arg = parse_expression(cur, err);
     if (*err != PARSE_OK) return arg;
     int n = val_to_int(&arg);
     free_value(&arg);
     if (n < 0) n = 0;
-    char *buf = (char *)calloc(n + 1, 1);
+    char *buf = (char *)malloc(n + 1);
     if (!buf) return val_string("");
+    memset(buf, ' ', n);
+    buf[n] = '\0';
     ExprValue res = val_string(buf);
     free(buf);
     return res;

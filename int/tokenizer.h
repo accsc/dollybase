@@ -95,6 +95,7 @@ typedef enum {
     KW_WAIT,
     KW_RECALL,
     KW_REPLACE,
+    KW_REPLICATE,
     KW_SEEK,
     KW_SELECT,
     KW_SET_ORDER,
@@ -165,6 +166,9 @@ typedef enum {
     KW_FIELDS,
     KW_FOUND,
     KW_IIF,
+    KW_ISALPHA,
+    KW_ISLOWER,
+    KW_ISUPPER,
     KW_INKEY,
     KW_INT_FUNC,          /* INT()                                  */
     KW_LEFT_FUNC,         /* LEFT()                                 */
@@ -183,6 +187,7 @@ typedef enum {
     KW_SQRT,
     KW_SPACE,
     KW_SUBSTR,
+    KW_STUFF,
     KW_SUM,
     KW_TYPE,
     KW_UPPER,

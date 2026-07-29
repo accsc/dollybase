@@ -633,8 +633,12 @@ static ExprValue parse_primary(Token **cur, ParseError *err) {
                         *cur = (*cur)->next;
                         return result;
                     }
+                    /* Field not found in current DBF — consume the field token
+                       and return null so the caller doesn't see a stray -> */
+                    *cur = (*cur)->next;
+                    return val_null();
                 }
-                /* Field not found — fall through to variable lookup */
+                /* -> not followed by IDENT — consume -> and fall through */
             }
             /* Variable reference — look up in the variable store. */
             *cur = saved;

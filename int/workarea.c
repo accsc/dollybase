@@ -366,6 +366,32 @@ char *wa_get_field(int idx)
     return result;
 }
 
+int wa_field_to_number_area(int area, const char *name)
+{
+    if (area < 0 || area >= MAX_WORK_AREAS || !areas[area]) return 0;
+    int result = field_to_number(areas[area], (char *)name);
+    if (result < 0) return 0;
+    return result;
+}
+
+char wa_field_type_area(int area, int idx)
+{
+    if (area < 0 || area >= MAX_WORK_AREAS || !areas[area]) return 0;
+    return (char)dfield_type(areas[area], idx);
+}
+
+char *wa_get_field_area(int area, int idx)
+{
+    if (area < 0 || area >= MAX_WORK_AREAS || !areas[area]) return NULL;
+    char *buf = malloc(1024);
+    if (!buf) return NULL;
+    char *p = buf;
+    get_field(areas[area], idx, &p);
+    char *result = strdup(buf);
+    free(buf);
+    return result;
+}
+
 int wa_replace(const char *fieldname, const char *value)
 {
     DATABASEDBF *db = wa_db();
@@ -386,6 +412,32 @@ char *wa_dbf_name(void)
     if (name)
         return name;
     return strdup("");
+}
+
+/* Resolve alias to 0-based area index.
+   Accepts single-letter aliases ("A"=area 0, "B"=area 1, ...)
+   or the DBF name (case-insensitive match on the name field). */
+int wa_alias_to_area(const char *alias)
+{
+    if (!alias || !*alias) return -1;
+
+    /* Single-letter alias: A=0, B=1, ... J=9 */
+    if (alias[1] == '\0') {
+        int c = toupper((unsigned char)alias[0]);
+        if (c >= 'A' && c < 'A' + MAX_WORK_AREAS) {
+            int idx = c - 'A';
+            if (areas[idx])
+                return idx;
+        }
+    }
+
+    /* Try matching against DBF names (case-insensitive) */
+    for (int i = 0; i < MAX_WORK_AREAS; i++) {
+        if (areas[i] && strcasecmp(areas[i]->name, alias) == 0)
+            return i;
+    }
+
+    return -1;
 }
 
 /* ------------------------------------------------------------------ */

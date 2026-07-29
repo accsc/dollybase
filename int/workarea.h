@@ -49,10 +49,14 @@ int  wa_field_to_number(const char *name);   // 1-based, 0 if not found.
 char *wa_field_name(int idx);                // 1-based. Caller frees.
 char wa_field_type(int idx);                 // 1-based. Returns 'C','N','D','L','M', or 0.
 char *wa_get_field(int idx);                 // 1-based. Caller frees.
+char *wa_get_field_area(int area, int idx);  // 1-based field idx in specific area (0-based). Caller frees.
+int  wa_field_to_number_area(int area, const char *name); // 1-based, 0 if not found, in specific area.
+char wa_field_type_area(int area, int idx);  // 1-based field idx in specific area.
 int  wa_replace(const char *fieldname, const char *value);
 
 /* Utility */
 char *wa_dbf_name(void);  // ALIAS(). Caller frees.
+int  wa_alias_to_area(const char *alias); // Resolve "A","B",... or DBF name to 0-based area index. Returns -1 if not found.
 
 /* Index support */
 int  wa_set_index(const char *index_file);  // SET INDEX TO <file>. Returns 0 on success.

@@ -593,18 +593,22 @@ static ExprValue parse_primary(Token **cur, ParseError *err) {
         }
 
         case TOK_IDENT: {
-            /* Check for -> field access: TABLE->FIELD */
+            /* Check for -> field access: ALIAS->FIELD */
             Token *saved = *cur;
             *cur = tok->next;
             if (*cur && (*cur)->type == TOK_ARROW) {
-                /* TABLE->FIELD access */
+                /* ALIAS->FIELD access — resolve alias to work area */
+                const char *alias = tok->value;
                 *cur = (*cur)->next; /* skip -> */
                 if (*cur && (*cur)->type == TOK_IDENT) {
                     const char *fieldname = (*cur)->value;
-                    int fidx = wa_field_to_number(fieldname);
+                    int area = wa_alias_to_area(alias);
+                    if (area < 0)
+                        area = wa_get_selected(); /* fallback: current area */
+                    int fidx = wa_field_to_number_area(area, fieldname);
                     if (fidx > 0) {
-                        char *val = wa_get_field(fidx);
-                        char type = wa_field_type(fidx);
+                        char *val = wa_get_field_area(area, fidx);
+                        char type = wa_field_type_area(area, fidx);
                         ExprValue result;
                         if (val) {
                             switch (type) {
@@ -633,7 +637,7 @@ static ExprValue parse_primary(Token **cur, ParseError *err) {
                         *cur = (*cur)->next;
                         return result;
                     }
-                    /* Field not found in current DBF — consume the field token
+                    /* Field not found — consume the field token
                        and return null so the caller doesn't see a stray -> */
                     *cur = (*cur)->next;
                     return val_null();

@@ -54,4 +54,32 @@ LIST TITULO FOR "1983"$LTRIM(STR(AN_EDICION))
 GO TOP
 LIST TITULO, AP1_AU FOR "PROFETA"$TITULO .AND. LEN(AP1_AU) > 0 WHILE RECNO() <= 10
 
+* --- Non-visual verification tests (logic only) ---
+
+* Test 12: Verify $ filter matches expected count
+GO TOP
+count = 0
+DO WHILE NOT EOF()
+    IF "ANONIMO" $ AP1_AU
+        count = count + 1
+    ENDIF
+    SKIP
+ENDDO
+? "Test 12: Records with ANONIMO in AP1_AU =", count
+
+* Test 13: Verify bare field name in FOR works via LOCATE
+GO TOP
+LOCATE FOR "PROFETA" $ TITULO
+? "Test 13: LOCATE PROFETA in TITULO - FOUND=", FOUND(), "RECNO=", RECNO()
+
+* Test 14: Verify $ with numeric coercion
+GO TOP
+LOCATE FOR "1983" $ LTRIM(STR(AN_EDICION))
+? "Test 14: LOCATE 1983 in AN_EDICION - FOUND=", FOUND(), "RECNO=", RECNO()
+
+* Test 15: Verify .AND. with $ in LOCATE
+GO TOP
+LOCATE FOR "PROFETA" $ TITULO .AND. LEN(AP1_AU) > 0
+? "Test 15: LOCATE PROFETA+LEN - FOUND=", FOUND(), "RECNO=", RECNO()
+
 QUIT

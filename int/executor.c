@@ -2309,18 +2309,19 @@ static ExecStatus exec_list(Token **cur)
                     free(name);
                     first = 0;
                 }
-                mvaddstr(current_row, 0, line);
+                addstr(line);
+                addch('\n');
+                refresh();
                 current_row++;
             }
 
             if (current_row >= page_rows) {
-                int last_row = LINES > 0 ? LINES - 1 : 23;
-                mvaddstr(last_row, 0, "          -- more --");
+                addstr("          -- more --");
                 refresh();
                 int ch = getch();
                 if (ch == 27 || ch == 'q' || ch == 'Q')
                     break;
-                clrtoeol();
+                addch('\n');
                 current_row = 0;
                 refresh();
             }
@@ -2345,8 +2346,9 @@ static ExecStatus exec_list(Token **cur)
                     free(name);
                     first = 0;
                 }
-                mvaddstr(current_row, 0, line);
-                current_row++;
+                addstr(line);
+                addch('\n');
+                refresh();
             }
         }
     }

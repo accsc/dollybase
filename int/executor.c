@@ -160,6 +160,7 @@ static void skip_to_eol(Token **cur);
 /* Statement handlers called from the dispatcher before their definitions */
 static ExecStatus exec_if(Token **cur);
 static ExecStatus exec_do_while(Token **cur);
+static ExecStatus exec_do_case(Token **cur);
 static ExecStatus exec_for(Token **cur);
 static ExecStatus exec_do_call(Token **cur);
 static ExecStatus exec_return(Token **cur);
@@ -174,7 +175,7 @@ static ExecStatus exec_assign(Token **cur);
 static ExecStatus exec_delete(Token **cur);
 static ExecStatus exec_recall(Token **cur);
 static ExecStatus exec_pack(Token **cur);
-static ExecStatus exec_pause(Token **cur);
+static ExecStatus exec_wait(Token **cur);
 static ExecStatus exec_zap(Token **cur);
 static ExecStatus exec_replace(Token **cur);
 static ExecStatus exec_append(Token **cur);
@@ -189,6 +190,7 @@ static ExecStatus exec_continue(Token **cur);
 static ExecStatus exec_at(Token **cur);
 static ExecStatus exec_read(Token **cur);
 static ExecStatus exec_clear(Token **cur);
+static ExecStatus exec_text(Token **cur);
 
 /* Block / loop helpers */
 static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2);
@@ -356,7 +358,7 @@ static ExecStatus exec_statement(Token **cur)
             case KW_DELETE:   return exec_delete(cur);
             case KW_RECALL:   return exec_recall(cur);
             case KW_PACK:     return exec_pack(cur);
-            case KW_PAUSE:    return exec_pause(cur);
+            case KW_WAIT:     return exec_wait(cur);
             case KW_ZAP:      return exec_zap(cur);
             case KW_REPLACE:  return exec_replace(cur);
             case KW_APPEND:   return exec_append(cur);
@@ -369,6 +371,7 @@ static ExecStatus exec_statement(Token **cur)
             case KW_CONTINUE: return exec_continue(cur);
             case KW_READ:     return exec_read(cur);
             case KW_CLEAR:    return exec_clear(cur);
+            case KW_TEXT:     return exec_text(cur);
             case KW_BROWSE:   return exec_browse(cur);
             default:
                 /* Unknown keyword — treat as expression or skip */
@@ -748,6 +751,10 @@ static void skip_block_nested(Token **cur, KeywordId end_kw, KeywordId else_kw)
                 (*cur)->keyword_id == KW_FOR) {
                 depth++;
             } else if ((*cur)->keyword_id == end_kw ||
+                       (*cur)->keyword_id == KW_ENDIF ||
+                       (*cur)->keyword_id == KW_ENDDO ||
+                       (*cur)->keyword_id == KW_ENDCASE ||
+                       (*cur)->keyword_id == KW_ENDFOR ||
                        (else_kw && (*cur)->keyword_id == else_kw)) {
                 depth--;
                 if (depth <= 0) break;
@@ -764,10 +771,13 @@ static void skip_block_nested(Token **cur, KeywordId end_kw, KeywordId else_kw)
 
 static ExecStatus exec_do_while(Token **cur)
 {
-    /* DO WHILE <condition>  or  DO <name> [WITH ...] */
+    /* DO WHILE <condition>  or  DO CASE  or  DO <name> [WITH ...] */
     *cur = (*cur)->next; /* skip "DO" */
     if (*cur && match_keyword(cur, KW_WHILE)) {
         /* DO WHILE — fall through to existing loop logic below */
+    } else if (*cur && match_keyword(cur, KW_CASE)) {
+        /* DO CASE — delegate to exec_do_case which back-patches cur */
+        return exec_do_case(cur);
     } else {
         /* bare "DO <name>" — delegate to exec_do_call which back-patches cur */
         return exec_do_call(cur);
@@ -867,6 +877,139 @@ static ExecStatus exec_do_body(Token **cur)
         ExecStatus st = exec_statement(cur);
         if (st != EXEC_OK) return st;
     }
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* DO CASE / CASE / OTHERWISE / ENDCASE                                */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_do_case(Token **cur)
+{
+    /* cur points just past "DO CASE" (CASE already consumed by caller).
+       Iterate through CASE <expr> branches and OTHERWISE.
+       Execute the first matching branch, skip the rest to ENDCASE. */
+
+    int matched = 0;
+
+    while (*cur && (*cur)->type != TOK_EOF) {
+        if ((*cur)->type == TOK_EOL) {
+            *cur = (*cur)->next;
+            continue;
+        }
+
+        if ((*cur)->type != TOK_KEYWORD) {
+            /* Non-keyword inside DO CASE — skip to EOL */
+            skip_to_eol(cur);
+            continue;
+        }
+
+        KeywordId kw = (*cur)->keyword_id;
+
+        if (kw == KW_ENDCASE) {
+            *cur = (*cur)->next; /* consume ENDCASE */
+            return EXEC_OK;
+        }
+
+        if (kw == KW_CASE) {
+            /* CASE <expression> */
+            *cur = (*cur)->next; /* skip "CASE" */
+
+            if (matched) {
+                /* Already matched a branch — skip this one's body */
+                /* Skip expression */
+                ExprValue cond = parse_expr(cur);
+                free_value(&cond);
+                /* Skip EOL after expression */
+                if (*cur && (*cur)->type == TOK_EOL)
+                    *cur = (*cur)->next;
+                /* Skip body to next CASE / OTHERWISE / ENDCASE */
+                while (*cur && (*cur)->type != TOK_EOF) {
+                    if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
+                    if ((*cur)->type == TOK_KEYWORD &&
+                        ((*cur)->keyword_id == KW_CASE ||
+                         (*cur)->keyword_id == KW_OTHERWISE ||
+                         (*cur)->keyword_id == KW_ENDCASE))
+                        break;
+                    *cur = (*cur)->next;
+                }
+                continue;
+            }
+
+            /* Evaluate condition */
+            ExprValue cond = parse_expr(cur);
+            int truthy = val_to_logical(&cond);
+            free_value(&cond);
+
+            /* Skip EOL after expression */
+            if (*cur && (*cur)->type == TOK_EOL)
+                *cur = (*cur)->next;
+
+            if (truthy) {
+                matched = 1;
+                /* Execute body until next CASE / OTHERWISE / ENDCASE */
+                while (*cur && (*cur)->type != TOK_EOF) {
+                    if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
+                    if ((*cur)->type == TOK_KEYWORD &&
+                        ((*cur)->keyword_id == KW_CASE ||
+                         (*cur)->keyword_id == KW_OTHERWISE ||
+                         (*cur)->keyword_id == KW_ENDCASE))
+                        break;
+                    ExecStatus st = exec_statement(cur);
+                    if (st == EXEC_RETURN || st == EXEC_CANCEL)
+                        return st;
+                }
+            } else {
+                /* Skip body to next CASE / OTHERWISE / ENDCASE */
+                while (*cur && (*cur)->type != TOK_EOF) {
+                    if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
+                    if ((*cur)->type == TOK_KEYWORD &&
+                        ((*cur)->keyword_id == KW_CASE ||
+                         (*cur)->keyword_id == KW_OTHERWISE ||
+                         (*cur)->keyword_id == KW_ENDCASE))
+                        break;
+                    *cur = (*cur)->next;
+                }
+            }
+            continue;
+        }
+
+        if (kw == KW_OTHERWISE) {
+            if (matched) {
+                /* Already matched — skip OTHERWISE body to ENDCASE */
+                *cur = (*cur)->next; /* skip "OTHERWISE" */
+                if (*cur && (*cur)->type == TOK_EOL)
+                    *cur = (*cur)->next;
+                while (*cur && (*cur)->type != TOK_EOF) {
+                    if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
+                    if ((*cur)->type == TOK_KEYWORD &&
+                        (*cur)->keyword_id == KW_ENDCASE)
+                        break;
+                    *cur = (*cur)->next;
+                }
+                continue;
+            }
+            /* Catch-all — execute body */
+            matched = 1;
+            *cur = (*cur)->next; /* skip "OTHERWISE" */
+            if (*cur && (*cur)->type == TOK_EOL)
+                *cur = (*cur)->next;
+            while (*cur && (*cur)->type != TOK_EOF) {
+                if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
+                if ((*cur)->type == TOK_KEYWORD &&
+                    (*cur)->keyword_id == KW_ENDCASE)
+                    break;
+                ExecStatus st = exec_statement(cur);
+                if (st == EXEC_RETURN || st == EXEC_CANCEL)
+                    return st;
+            }
+            continue;
+        }
+
+        /* Unknown keyword inside DO CASE — skip line */
+        skip_to_eol(cur);
+    }
+
     return EXEC_OK;
 }
 
@@ -1588,14 +1731,14 @@ static ExecStatus exec_pack(Token **cur)
 }
 
 /* ------------------------------------------------------------------ */
-/* PAUSE [message]                                                     */
+/* WAIT [message]                                                      */
 /* ------------------------------------------------------------------ */
 
-static ExecStatus exec_pause(Token **cur)
+static ExecStatus exec_wait(Token **cur)
 {
-    (*cur) = (*cur)->next; /* skip "PAUSE" */
+    (*cur) = (*cur)->next; /* skip "WAIT" */
 
-    char msg[256] = "Press any key to continue...";
+    char msg[256] = "";
     if (*cur && !is_eol_or_eof(*cur)) {
         ExprValue val = parse_expr(cur);
         char *s = val_to_string(&val);
@@ -1607,17 +1750,95 @@ static ExecStatus exec_pause(Token **cur)
     skip_to_eol(cur);
 
     if (ui_is_active()) {
-        /* Ensure nodelay is OFF so getch() blocks */
         nodelay(stdscr, FALSE);
-        /* Print message at current cursor position (right after prior output) */
         addstr(msg);
         refresh();
-        /* Block until a key is pressed */
         getch();
     } else {
         printf("%s", msg);
         fflush(stdout);
     }
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* TEXT ... ENDTEXT                                                    */
+/* ------------------------------------------------------------------ */
+/* TEXT ... ENDTEXT                                                    */
+/* ------------------------------------------------------------------ */
+
+/* Expand &varname macros in a raw text line. */
+static void expand_macros(const char *line, char *out, size_t out_size)
+{
+    size_t o = 0;
+    const char *p = line;
+    while (*p && o < out_size - 1) {
+        if (*p == '&') {
+            /* Scan variable name: alphanumeric + underscore */
+            const char *name_start = p + 1;
+            if (*name_start && (isalnum((unsigned char)*name_start) || *name_start == '_')) {
+                const char *name_end = name_start;
+                while (*name_end && (isalnum((unsigned char)*name_end) || *name_end == '_'))
+                    name_end++;
+                size_t nlen = name_end - name_start;
+                char name[256];
+                if (nlen >= sizeof(name)) nlen = sizeof(name) - 1;
+                memcpy(name, name_start, nlen);
+                name[nlen] = '\0';
+
+                ExprValue val = vars_get(name);
+                char *s = val_to_string(&val);
+                size_t slen = strlen(s);
+                if (o + slen < out_size - 1) {
+                    memcpy(out + o, s, slen);
+                    o += slen;
+                }
+                free(s);
+                free_value(&val);
+                p = name_end;
+            } else {
+                out[o++] = *p++;
+            }
+        } else {
+            out[o++] = *p++;
+        }
+    }
+    out[o] = '\0';
+}
+
+static ExecStatus exec_text(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "TEXT" */
+
+    /* Each TOK_STRING token is one raw line from the TEXT block.
+       Expand &var macros and print each line. */
+    char expanded[2048];
+
+    while (*cur && (*cur)->type != TOK_EOF) {
+        /* Stop at ENDTEXT */
+        if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDTEXT) {
+            (*cur) = (*cur)->next;
+            break;
+        }
+
+        if ((*cur)->type == TOK_STRING) {
+            expand_macros((*cur)->value, expanded, sizeof(expanded));
+            if (ui_is_active()) {
+                printw("%s\n", expanded);
+                refresh();
+            } else {
+                printf("%s\n", expanded);
+                fflush(stdout);
+            }
+        }
+
+        (*cur) = (*cur)->next;
+    }
+
+    /* Skip trailing EOL after ENDTEXT */
+    if (*cur && (*cur)->type == TOK_EOL)
+        (*cur) = (*cur)->next;
+
     return EXEC_OK;
 }
 

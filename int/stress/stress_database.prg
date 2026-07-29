@@ -32,7 +32,7 @@ SKIP -5
 GO TOP
 ? "After GO TOP, RECNO:", RECNO()
 
-PAUSE 
+WAIT "Press any key to continue..."
 CLEAR
 
 ? "--- GO BOTTOM ---"

@@ -15,6 +15,7 @@
 #include <math.h>
 #include <ctype.h>
 #include <strings.h>
+#include <time.h>
 
 /* ------------------------------------------------------------------ */
 /* Forward declarations (grammar levels, lowest precedence first)      */
@@ -63,6 +64,7 @@ static ExprValue builtin_ctod(Token **cur, ParseError *err);
 static ExprValue builtin_day(Token **cur, ParseError *err);
 static ExprValue builtin_month(Token **cur, ParseError *err);
 static ExprValue builtin_year(Token **cur, ParseError *err);
+static ExprValue builtin_time(Token **cur, ParseError *err);
 static ExprValue builtin_recno(Token **cur, ParseError *err);
 static ExprValue builtin_recn(Token **cur, ParseError *err);
 static ExprValue builtin_eof(Token **cur, ParseError *err);
@@ -702,6 +704,7 @@ static const FuncEntry func_table[] = {
     { KW_TRIM,      builtin_trim },
     { KW_VAL,       builtin_val },
     { KW_YEAR,      builtin_year },
+    { KW_TIME,      builtin_time },
     /* Additional functions */
     { 0,            NULL }
 };
@@ -1213,6 +1216,15 @@ static ExprValue builtin_year(Token **cur, ParseError *err) {
     }
     free_value(&arg);
     return val_integer(y);
+}
+
+static ExprValue builtin_time(Token **cur, ParseError *err) {
+    (void)cur; (void)err;
+    time_t now = time(NULL);
+    struct tm *lt = localtime(&now);
+    char buf[9];
+    snprintf(buf, sizeof(buf), "%02d:%02d:%02d", lt->tm_hour, lt->tm_min, lt->tm_sec);
+    return val_string(buf);
 }
 
 static ExprValue builtin_recno(Token **cur, ParseError *err) {

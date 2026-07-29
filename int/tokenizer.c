@@ -65,6 +65,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"ENDDO",        KW_ENDDO},
     {"ENDFOR",       KW_ENDFOR},
     {"ENDIF",        KW_ENDIF},
+    {"ENDTEXT",      KW_ENDTEXT},
     {"EOF",          KW_EOF},
     {"EXACT",        KW_EXACT},
     {"EXIT",         KW_EXIT},
@@ -100,10 +101,10 @@ static const KeywordEntry KEYWORDS[] = {
     {"MULTILOCKS",   KW_MULTILOCKS},
     {"NEXT",         KW_NEXT},
     {"NOT",          KW_NOT},
+    {"OTHERWISE",    KW_OTHERWISE},
     {"OR",           KW_OR},
     {"PACK",         KW_PACK},
     {"PARAMETERS",   KW_PARAMETERS},
-    {"PAUSE",        KW_PAUSE},
     {"PICTURE",      KW_PICTURE},
     {"PRINTER",      KW_PRINTER},
     {"PRIVATE",      KW_PRIVATE},
@@ -137,6 +138,8 @@ static const KeywordEntry KEYWORDS[] = {
     {"SUBSTR",       KW_SUBSTR},
     {"SUM",          KW_SUM},
     {"TALK",         KW_TALK},
+    {"TEXT",         KW_TEXT},
+    {"TIME",         KW_TIME},
     {"TRIM",         KW_TRIM},
     {"TYPE",         KW_TYPE},
     {"UNIQUE",       KW_UNIQUE},
@@ -145,6 +148,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"USE",          KW_USE},
     {"VAL",          KW_VAL},
     {"VALID",        KW_VALID},
+    {"WAIT",         KW_WAIT},
     {"WHILE",        KW_WHILE},
     {"WITH",         KW_WITH},
     {"YEAR",         KW_YEAR},
@@ -181,6 +185,51 @@ static void append_token(Token *tok, Token **head, Token **tail)
         *head = tok;
     }
     *tail = tok;
+}
+
+/* ------------------------------------------------------------------ */
+/* TEXT ... ENDTEXT — collect raw lines verbatim                       */
+/* ------------------------------------------------------------------ */
+
+static void scan_text_block(const char **pos, int *line, Token **head, Token **tail)
+{
+    /* pos points just past "TEXT".
+       Collect lines verbatim until ENDTEXT is found.
+       Each line becomes a TOK_STRING token.
+       The final ENDTEXT is emitted as a keyword token. */
+    char linebuf[1024];
+
+    while (**pos) {
+        /* Collect one line (up to \n), verbatim */
+        size_t i = 0;
+        while (**pos && **pos != '\n') {
+            if (i < sizeof(linebuf) - 1)
+                linebuf[i++] = **pos;
+            (*pos)++;
+        }
+        linebuf[i] = '\0';
+
+        if (**pos == '\n') {
+            (*pos)++;
+            (*line)++;
+        }
+
+        /* Strip leading/trailing whitespace for the ENDTEXT check */
+        char *p = linebuf;
+        while (*p == ' ' || *p == '\t') p++;
+        /* Check if this line is ENDTEXT (case-insensitive) */
+        if (strcasecmp(p, "ENDTEXT") == 0) {
+            /* Emit ENDTEXT keyword token */
+            Token *tok = make_token(TOK_KEYWORD, "ENDTEXT", *line - 1);
+            tok->keyword_id = KW_ENDTEXT;
+            append_token(tok, head, tail);
+            return;
+        }
+
+        /* Emit the raw line as a TOK_STRING */
+        Token *tok = make_token(TOK_STRING, linebuf, *line - 1);
+        append_token(tok, head, tail);
+    }
 }
 
 /* Binary search on KEYWORDS[]. Case-insensitive. Returns KeywordId or KW_NONE. */
@@ -299,16 +348,18 @@ static void scan_logical_literal(const char **pos, Token **out, int line)
 
     char c = toupper((unsigned char)**pos);
     if (c != 'T' && c != 'F' && c != 'Y' && c != 'N') {
-        /* Not a logical literal — fall through to identifier scan */
-        (*pos)--;  /* back up so caller can handle '.' normally */
+        /* Not a logical literal — back up so caller can handle '.' normally */
+        (*pos)--;  /* back up to '.' */
         *out = NULL;
         return;
     }
     (*pos)++;
 
     if (**pos != '.') {
-        /* Incomplete logical — treat as identifier starting with letter */
-        (*pos)--;  /* back up past the dot */
+        /* Not a logical literal (e.g. .NOT. has 'O' after 'N').
+           Back up to BEFORE the '.' so the main loop skips '.' and
+           then scans the identifier/keyword normally. */
+        (*pos) -= 2;  /* back up past letter and past '.' */
         *out = NULL;
         return;
     }
@@ -521,6 +572,14 @@ Token *tokenize(const char *source)
         default:
             if (isalpha((unsigned char)c) || c == '_') {
                 scan_identifier_or_keyword(&pos, &tok, line);
+                /* If we just scanned TEXT keyword, collect the block verbatim */
+                if (tok && tok->type == TOK_KEYWORD && tok->keyword_id == KW_TEXT) {
+                    append_token(tok, &head, &tail);
+                    tok = NULL;  /* don't append again below */
+                    scan_text_block(&pos, &line, &head, &tail);
+                    at_line_start = 1;
+                    continue;
+                }
             } else if (c == '(') {
                 tok = make_token(TOK_LPAREN, "(", line);
                 pos++;

@@ -94,7 +94,7 @@ static void create_add_field(CreateState *cs)
 {
     create_grow(cs);
     int idx = cs->field_count;
-    snprintf(cs->field_names + idx * 11, 11, "F%d", idx + 1);
+    memset(cs->field_names + idx * 11, 0, 11);
     cs->field_types[idx] = 'C';
     cs->field_widths[idx] = 10;
     cs->field_decimals[idx] = 0;

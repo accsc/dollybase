@@ -25,6 +25,7 @@ typedef enum {
     TOK_OP_ARITH,         /* + - * / % ^                            */
     TOK_OP_COMPARISON,    /* = == != <> >= <= > <                   */
     TOK_OP_LOGIC,         /* AND OR NOT (as operators)              */
+    TOK_OP_CONTAINS,      /* $  substring containment               */
     TOK_LPAREN,           /* (                                       */
     TOK_RPAREN,           /* )                                       */
     TOK_COMMA,            /* ,                                       */

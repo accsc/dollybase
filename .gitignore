@@ -1,0 +1,21 @@
+# Build artifacts
+config.mk
+*.o
+*.a
+int/prg
+int/simple_use
+int/test_prg
+int/test_prg_dbg
+libdbase_4/.libs/
+
+# Stress test binaries
+int/stress/make_books_memo
+int/stress/test_fseek_eof
+int/stress/test_memo_bottom
+int/stress/test_memo_direct
+int/stress/test_title
+int/stress/test_use
+
+# OS files
+.DS_Store
+Thumbs.db

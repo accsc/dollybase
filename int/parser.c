@@ -177,7 +177,7 @@ static ExprValue parse_comp_expr(Token **cur, ParseError *err) {
     if (*err != PARSE_OK) return left;
 
     while (1) {
-        int cmp_op = 0; /* 0=none, 1==, 2=<>, 3=>, 4=<, 5=>=, 6<= */
+        int cmp_op = 0; /* 0=none, 1==, 2=<>, 3=>, 4=<, 5=>=, 6<=, 7=$ */
 
         if (cur && *cur && (*cur)->type == TOK_OP_COMPARISON) {
             const char *v = (*cur)->value;
@@ -189,37 +189,64 @@ static ExprValue parse_comp_expr(Token **cur, ParseError *err) {
             else if (strcmp(v, "<=") == 0) cmp_op = 6;
         }
 
-        if (!cmp_op) break;
-        *cur = (*cur)->next; /* consume operator */
-
-        ExprValue right = parse_add_expr(cur, err);
-        if (*err != PARSE_OK) { free_value(&left); return left; }
-
-        int result = 0;
-        switch (cmp_op) {
-            case 1: /* == */
-                result = (compare_values(&left, &right) == 0);
-                break;
-            case 2: /* <> */
-                result = (compare_values(&left, &right) != 0);
-                break;
-            case 3: /* > */
-                result = (compare_values(&left, &right) > 0);
-                break;
-            case 4: /* < */
-                result = (compare_values(&left, &right) < 0);
-                break;
-            case 5: /* >= */
-                result = (compare_values(&left, &right) >= 0);
-                break;
-            case 6: /* <= */
-                result = (compare_values(&left, &right) <= 0);
-                break;
+        // $ operator (substring containment) — different token type
+        int is_contains = 0;
+        if (cur && *cur && (*cur)->type == TOK_OP_CONTAINS) {
+            is_contains = 1;
         }
 
-        free_value(&left);
-        free_value(&right);
-        left = val_logical(result);
+        if (!cmp_op && !is_contains) break;
+
+        if (is_contains) {
+            *cur = (*cur)->next; /* consume '$' */
+            ExprValue right = parse_add_expr(cur, err);
+            if (*err != PARSE_OK) { free_value(&left); return left; }
+
+            /* needle $ haystack — coerce both to strings, case-insensitive */
+            char *needle = val_to_string(&left);
+            char *haystack = val_to_string(&right);
+            int result = 0;
+            if (needle && haystack && *needle) {
+                result = (strcasestr(haystack, needle) != NULL);
+            }
+            free(needle);
+            free(haystack);
+            free_value(&left);
+            free_value(&right);
+            left = val_logical(result);
+
+        } else {
+            *cur = (*cur)->next; /* consume operator */
+
+            ExprValue right = parse_add_expr(cur, err);
+            if (*err != PARSE_OK) { free_value(&left); return left; }
+
+            int result = 0;
+            switch (cmp_op) {
+                case 1: /* == */
+                    result = (compare_values(&left, &right) == 0);
+                    break;
+                case 2: /* <> */
+                    result = (compare_values(&left, &right) != 0);
+                    break;
+                case 3: /* > */
+                    result = (compare_values(&left, &right) > 0);
+                    break;
+                case 4: /* < */
+                    result = (compare_values(&left, &right) < 0);
+                    break;
+                case 5: /* >= */
+                    result = (compare_values(&left, &right) >= 0);
+                    break;
+                case 6: /* <= */
+                    result = (compare_values(&left, &right) <= 0);
+                    break;
+            }
+
+            free_value(&left);
+            free_value(&right);
+            left = val_logical(result);
+        }
     }
 
     return left;

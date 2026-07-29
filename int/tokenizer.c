@@ -505,6 +505,9 @@ static void scan_operator(const char **pos, Token **out, int line)
     case '!':
         type = TOK_OP_COMPARISON;
         break;
+    case '$':
+        type = TOK_OP_CONTAINS;
+        break;
     default:
         /* Unknown operator char — skip silently */
         (*pos)++;
@@ -688,6 +691,7 @@ const char *token_type_name(TokenType type)
     case TOK_OP_ARITH:      return "TOK_OP_ARITH";
     case TOK_OP_COMPARISON: return "TOK_OP_COMPARISON";
     case TOK_OP_LOGIC:      return "TOK_OP_LOGIC";
+    case TOK_OP_CONTAINS:   return "TOK_OP_CONTAINS";
     case TOK_LPAREN:        return "TOK_LPAREN";
     case TOK_RPAREN:        return "TOK_RPAREN";
     case TOK_COMMA:         return "TOK_COMMA";

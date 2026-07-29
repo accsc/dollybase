@@ -131,7 +131,6 @@ int main(int argc, char *argv[])
     free_tokens(tokens);
 
     /* Show end message and pause so the user can see the screen */
-    touchwin(stdscr);
     mvaddstr(LINES - 1, 0, " *** END DOLLYBASE RUN ***");
     refresh();
     { int gc = getch(); (void)gc; }

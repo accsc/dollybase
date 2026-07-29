@@ -43,7 +43,8 @@ int ui_init(void)
     noecho();            /* don't echo input automatically             */
     keypad(stdscr, TRUE);/* enable special keys                        */
     scrollok(stdscr, TRUE); /* allow auto-scroll when cursor goes past bottom */
-    curs_set(1);         /* visible cursor                             */
+    scrl(1);                 /* actually enable scrolling on stdscr      */
+    curs_set(1);            /* visible cursor                           */
     ui_active = 1;
     return 0;
 }
@@ -129,12 +130,13 @@ void ui_print(const char *text)
 {
     if (!ui_active || !text) return;
     addstr(text);
+    refresh();
 }
 
 void ui_print_newline(void)
 {
     if (!ui_active) return;
-    addch('\n');
+    mvaddstr(getcury(stdscr), getcurx(stdscr), "\n");
 }
 
 /* ------------------------------------------------------------------ */

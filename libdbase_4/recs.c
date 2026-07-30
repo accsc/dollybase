@@ -233,8 +233,55 @@ if( asp->fields.tipos[x] == 'M')
 	get_field2(asp,x, &me);  /* Without conversion of memo */
 	y = atoi(me);
 	get_dbt(asp->name,memo_name);
-	replace_dbt_block(memo_name,y,rerum);
-	free(memo_name);
+	if( y == 0)
+	{
+		/* New record: memo block not yet allocated — add it */
+		FILE *dbt_f = fopen(memo_name, "rb");
+		int new_block = 0;
+		if( dbt_f)
+		{
+			char hdr[4];
+			fread(hdr, 1, 4, dbt_f);
+			fclose(dbt_f);
+			new_block = hdr[0] + (hdr[1]*256) + (hdr[2]*65536) + (hdr[3]*16777216);
+		}
+		if( new_block <= 0)
+		{
+			free(memo_name);
+			fclose(a);
+			return -1;
+		}
+		/* Write the memo content to the .dbt file */
+		if( add_to_dbt(memo_name, rerum, strlen(rerum)) != 0)
+		{
+			free(memo_name);
+			fclose(a);
+			return -1;
+		}
+		free(memo_name);
+		/* Write the new block pointer back into the DBF record */
+		{
+			char ptr[11];
+			snprintf(ptr, sizeof(ptr), "%010d", new_block);
+			int pos2 = ((asp->current-1)*asp->rec_len) + asp->header_len;
+			for(mas = 1; mas < x; ++mas)
+				pos2 += asp->fields.longitudes[mas];
+			++pos2;
+			if( field_to_number(asp,"_DBFLOCK") > 0)
+				pos2++;
+			fseek(a, pos2, SEEK_SET);
+			for(dos = 0; dos < (int)strlen(ptr); ++dos)
+				fputc(ptr[dos], a);
+			for(dos = 0; dos < (asp->fields.longitudes[x] - (int)strlen(ptr)); ++dos)
+				fputc(' ', a);
+			fflush(a);
+		}
+	}
+	else
+	{
+		replace_dbt_block(memo_name,y,rerum);
+		free(memo_name);
+	}
 	free(me);
 }else{
 

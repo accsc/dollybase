@@ -884,14 +884,20 @@ static ExecStatus exec_do_while(Token **cur)
         ExecStatus st = exec_do_body(cur);
 
         if (st == EXEC_EXIT) {
-            /* Skip rest of body to ENDDO */
-            while (*cur && (*cur)->type != TOK_EOF &&
-                   !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO)) {
-                if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
+            /* Skip rest of body to matching ENDDO, tracking nesting */
+            int depth = 1;
+            while (*cur && (*cur)->type != TOK_EOF) {
+                if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_DO &&
+                    do_is_block(*cur)) {
+                    depth++;
+                } else if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO) {
+                    depth--;
+                    if (depth == 0) {
+                        *cur = (*cur)->next; /* consume matching ENDDO */
+                        break;
+                    }
+                }
                 *cur = (*cur)->next;
-            }
-            if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO) {
-                *cur = (*cur)->next; /* consume ENDDO */
             }
             return EXEC_OK;
         }
@@ -954,14 +960,23 @@ static ExecStatus exec_do_body(Token **cur)
             if (kw == KW_EXIT) {
                 *cur = (*cur)->next; /* consume EXIT */
                 skip_to_eol(cur);
-                /* Leave cur at or past ENDDO — caller handles it */
-                while (*cur && (*cur)->type != TOK_EOF &&
-                       !((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO)) {
-                    if ((*cur)->type == TOK_EOL) { *cur = (*cur)->next; continue; }
-                    *cur = (*cur)->next;
-                }
-                if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ENDDO) {
-                    *cur = (*cur)->next;
+                /* Skip to matching ENDDO, tracking nesting */
+                {
+                    int depth = 1;
+                    while (*cur && (*cur)->type != TOK_EOF) {
+                        if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_DO &&
+                            do_is_block(*cur)) {
+                            depth++;
+                        } else if ((*cur)->type == TOK_KEYWORD &&
+                                   (*cur)->keyword_id == KW_ENDDO) {
+                            depth--;
+                            if (depth == 0) {
+                                /* Don't consume ENDDO — let caller handle it */
+                                break;
+                            }
+                        }
+                        *cur = (*cur)->next;
+                    }
                 }
                 return EXEC_EXIT;
             }

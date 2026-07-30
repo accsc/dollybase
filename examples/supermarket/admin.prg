@@ -2,33 +2,7 @@
 
 SET TALK OFF
 
-* Load all module files so their procedures are registered
-* Only load leaf procedures — menu procedures are loaded on first call
-DO sm_init
-DO product_add
-DO product_edit
-DO product_list
-DO product_search
-DO product_update_prices
-DO provider_add
-DO provider_list
-DO stock_adjust
-DO stock_low
-DO stock_full
-DO order_generate
-DO order_pending
-DO order_receive
-DO report_low_stock
-DO report_reorder
-DO report_daily_sales
-DO report_sales_ranking
-DO report_category_revenue
-DO sm_sales
-DO sale_counter_reset
-DO sale_record
-DO cart_clear
-DO cart_add
-DO cart_remove_last
+SET PROCEDURE TO sm_init, sm_main_menu, sm_products, sm_providers, sm_stock, sm_orders, sm_reports, sm_sales, product_add, product_edit, product_list, product_search, product_update_prices, provider_add, provider_list, stock_adjust, stock_low, stock_full, order_generate, order_pending, order_receive, report_low_stock, report_reorder, report_daily_sales, report_sales_ranking, report_category_revenue, sale_counter_reset, sale_record, cart_clear, cart_add, cart_remove_last
 
 DO init_system
 

@@ -45,8 +45,17 @@ static int port_strcasecmp(const char *a, const char *b)
 static Procedure procedures[MAX_PROCEDURES];
 static int proc_count = 0;
 
+/* Token lists loaded via SET PROCEDURE TO — kept alive for procedure bodies */
+#define MAX_PROC_FILES 64
+static Token *proc_file_tokens[MAX_PROC_FILES];
+static int proc_file_count = 0;
+
 void proc_registry_init(void)
 {
+    for (int i = 0; i < proc_file_count; i++) {
+        free_tokens(proc_file_tokens[i]);
+    }
+    proc_file_count = 0;
     proc_count = 0;
     memset(procedures, 0, sizeof(procedures));
 }
@@ -1178,6 +1187,73 @@ static ExecStatus exec_set(Token **cur)
 
     KeywordId setting = (*cur)->keyword_id;
     (*cur) = (*cur)->next;
+
+    /* Handle SET PROCEDURE TO <file1>, <file2>, ... */
+    if (setting == KW_PROCEDURE) {
+        /* Clear previously loaded procedure files */
+        proc_registry_init();
+
+        /* Expect: SET PROCEDURE TO <file1> [, <file2> ...] */
+        if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_TO) {
+            *cur = (*cur)->next; /* skip "TO" */
+        }
+        /* Read comma-separated file names until EOL */
+        while (*cur && !is_eol_or_eof(*cur)) {
+            char fname[512];
+            if ((*cur)->type == TOK_IDENT) {
+                strncpy(fname, (*cur)->value, sizeof(fname) - 1);
+                fname[sizeof(fname) - 1] = '\0';
+                *cur = (*cur)->next;
+            } else if ((*cur)->type == TOK_STRING) {
+                strncpy(fname, (*cur)->value, sizeof(fname) - 1);
+                fname[sizeof(fname) - 1] = '\0';
+                *cur = (*cur)->next;
+            } else {
+                break;
+            }
+            /* Load file and scan for procedures (no execution) */
+            {
+                char full[512];
+                if (strchr(fname, '.') == NULL) {
+                    snprintf(full, sizeof(full), "%s.prg", fname);
+                } else {
+                    strncpy(full, fname, sizeof(full) - 1);
+                    full[sizeof(full) - 1] = '\0';
+                }
+                FILE *fp = fopen(full, "r");
+                if (fp) {
+                    fseek(fp, 0, SEEK_END);
+                    long sz = ftell(fp);
+                    fseek(fp, 0, SEEK_SET);
+                    if (sz > 0) {
+                        char *src = malloc((size_t)sz + 1);
+                        if (src) {
+                            fread(src, 1, (size_t)sz, fp);
+                            src[sz] = '\0';
+                            Token *toks = tokenize(src);
+                            free(src);
+                            if (toks) {
+                                proc_scan(toks);
+                                /* Keep tokens alive — procedure bodies point into them */
+                                if (proc_file_count < MAX_PROC_FILES) {
+                                    proc_file_tokens[proc_file_count++] = toks;
+                                } else {
+                                    free_tokens(toks);
+                                }
+                            }
+                        }
+                    }
+                    fclose(fp);
+                }
+            }
+            /* Skip comma if present */
+            if (*cur && (*cur)->type == TOK_COMMA) {
+                *cur = (*cur)->next;
+            }
+        }
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
 
     /* Handle SET INDEX TO <file> */
     if (setting == KW_INDEX || setting == KW_SET_INDEX) {

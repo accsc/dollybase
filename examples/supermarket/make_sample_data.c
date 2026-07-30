@@ -13,11 +13,12 @@
 #include <unistd.h>
 #include "../../libdbase_4/libdbase.h"
 
-/* Helper: set a field name (1-indexed, 12 chars max, zero-filled) */
+/* Helper: set a field name (1-indexed, 12 chars max, zero-filled)
+   Layout: names[char_pos][field_idx] — char_pos 0-11, field_idx 1+ */
 static void set_fname(char names[12][256], int idx, const char *name)
 {
-    memset(names[idx], 0, sizeof(names[idx]));
-    strncpy(names[idx], name, 11);
+    for (int c = 0; c < 12; c++)
+        names[c][idx] = (c < (int)strlen(name)) ? name[c] : '\0';
 }
 
 /* Helper: pad string to exact length */

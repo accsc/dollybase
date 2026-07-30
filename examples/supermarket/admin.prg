@@ -34,7 +34,7 @@ DO WHILE .T.
       DO sm_sales
     CASE gChoice = 0
       ? "Goodbye!"
-      EXIT
+      RETURN
     OTHERWISE
       ? "Invalid option"
       WAIT

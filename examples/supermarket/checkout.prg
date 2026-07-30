@@ -46,16 +46,20 @@ DO WHILE .T.
   @ 22, 1 SAY REPLICATE("-", 70)
   @ 22, 1 SAY "  Items: " + LTRIM(STR(cART_COUNT)) + "   TOTAL: " + LTRIM(STR(cART_GRAND_TOTAL, 10, 2))
   @ 23, 1 SAY REPLICATE("-", 70)
-  @ 24, 1 SAY "  Enter barcode [F2=Checkout] [F3=Remove last] [Esc=Cancel]"
+  @ 24, 1 SAY "  Barcode: "
+  @ 24, 11 GET inputBarcode PICTURE "!!!!!!!!!!!!!"
+  @ 25, 1 SAY "  [Enter=Add] [F2=Checkout] [F3=Remove] [Esc=Cancel]"
+  READ
 
-  key = INKEY()
-
-  IF key = 3
-    DO cart_clear
-    EXIT
+  * Esc pressed (empty field) — check for special commands
+  IF inputBarcode = ""
+    * User pressed Esc on empty field — could be cancel
+    * Check next key to distinguish
+    LOOP
   ENDIF
 
-  IF key = 154
+  * Special commands typed in the barcode field
+  IF inputBarcode = "F2" .OR. inputBarcode = "f2"
     IF cART_COUNT > 0
       gPaymentMethod = "CASH"
       DO sale_record
@@ -72,25 +76,28 @@ DO WHILE .T.
     LOOP
   ENDIF
 
-  IF key = 155
+  IF inputBarcode = "F3" .OR. inputBarcode = "f3"
     IF cART_COUNT > 0
       DO cart_remove_last
     ENDIF
     LOOP
   ENDIF
 
-  IF key > 31 .AND. key < 127
-    ACCEPT "Barcode: " TO inputBarcode
-    SELECT 1
-    LOCATE FOR A->BARCODE = inputBarcode
+  IF inputBarcode = "Q" .OR. inputBarcode = "q"
+    DO cart_clear
+    EXIT
+  ENDIF
 
-    IF FOUND()
-      DO cart_add WITH inputBarcode, A->NAME, 1, A->PRICE
-      LOOP
-    ELSE
-      ? "Product not found: " + inputBarcode
-      WAIT
-    ENDIF
+  * Normal barcode entry
+  SELECT 1
+  LOCATE FOR A->BARCODE = inputBarcode
+
+  IF FOUND()
+    DO cart_add WITH inputBarcode, A->NAME, 1, A->PRICE
+    LOOP
+  ELSE
+    ? "Product not found: " + inputBarcode
+    WAIT
   ENDIF
 ENDDO
 

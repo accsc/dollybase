@@ -3,8 +3,8 @@
 SET TALK OFF
 
 * Load module files so their procedures are registered
+* Only load leaf procedures — others are loaded on first call
 DO sm_init
-DO sm_sales
 DO sale_counter_reset
 DO sale_record
 DO cart_clear

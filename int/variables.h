@@ -11,7 +11,7 @@
 #include "exprvalue.h"
 
 /* Maximum number of variables in the store */
-#define MAX_VARS 256
+#define MAX_VARS 1024
 
 /**
  * vars_init — initialize the variable store. Call once at startup.

@@ -805,14 +805,30 @@ static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2)
     return EXEC_OK;
 }
 
+/* Check if a DO keyword starts a block (DO WHILE / DO CASE) vs a bare call (DO <name>). */
+static int do_is_block(const Token *tok)
+{
+    /* tok points at the DO keyword. Look at the next token. */
+    Token *next = tok->next;
+    if (!next)
+        return 0;
+    /* DO WHILE ... ENDDO or DO CASE ... ENDCASE are blocks. */
+    if (next->type == TOK_KEYWORD &&
+        (next->keyword_id == KW_WHILE || next->keyword_id == KW_CASE))
+        return 1;
+    /* DO <name> is a bare procedure call — not a block. */
+    return 0;
+}
+
 /* Skip tokens until we hit a sentinel, respecting nesting. */
 static void skip_block_nested(Token **cur, KeywordId end_kw, KeywordId else_kw)
 {
     int depth = 1;
     while (*cur && (*cur)->type != TOK_EOF) {
         if ((*cur)->type == TOK_KEYWORD) {
-            if ((*cur)->keyword_id == KW_IF || (*cur)->keyword_id == KW_DO ||
-                (*cur)->keyword_id == KW_FOR) {
+            if ((*cur)->keyword_id == KW_IF ||
+                (*cur)->keyword_id == KW_FOR ||
+                ((*cur)->keyword_id == KW_DO && do_is_block(*cur))) {
                 depth++;
             } else if ((*cur)->keyword_id == end_kw ||
                        (*cur)->keyword_id == KW_ENDIF ||

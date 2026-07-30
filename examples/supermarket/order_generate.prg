@@ -38,7 +38,7 @@ PROCEDURE order_generate
     SKIP
   ENDDO
 
-  IF order_items != ""
+  IF .NOT. order_items = ""
     SELECT 5
     APPEND BLANK
     ord_counter = ord_counter + 1

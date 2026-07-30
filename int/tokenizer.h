@@ -144,7 +144,6 @@ typedef enum {
     KW_MULTILOCKS,
     KW_PRINTER,
     KW_SAFETY,
-    KW_SCOREBOARD,
     KW_STATUS,
     KW_STEP,
     KW_TALK,
@@ -155,7 +154,6 @@ typedef enum {
     KW_ALLTRIM,
     KW_ASC,
     KW_AT_FUNC,           /* AT()                                   */
-    KW_ATC,
     KW_BETWEEN,
     KW_BOF,
     KW_CHR,
@@ -166,7 +164,6 @@ typedef enum {
     KW_DAY,
     KW_DOW,
     KW_DOUBLE,
-    KW_DMY,
     KW_DTOC,
     KW_EMPTY,
     KW_EOF,

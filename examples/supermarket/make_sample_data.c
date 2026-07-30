@@ -1,7 +1,7 @@
 /*
  * make_sample_data.c — Create empty supermarket DBFs (schema only)
  *
- * Creates 5 DBF files in data/ directory with correct schema.
+ * Creates 5 DBF files in the current directory with correct schema.
  * Data seeding is done by seed_data.prg using the interpreter.
  *
  * Compile:
@@ -16,10 +16,22 @@
 
 /* Helper: set a field name (1-indexed, 11 chars max, zero-filled)
    Layout: names[char_pos][field_idx] — char_pos 0-10, field_idx 1+ */
-static void set_fname(char names[12][256], int idx, const char *name)
-{
+static void set_fname(char names[11][128], int idx, const char *name)
+{  
+  
+    printf("%s - %i\n",name,strlen(name));
     for (int c = 0; c < 11; c++)
-        names[c][idx] = (c < (int)strlen(name)) ? name[c] : '\0';
+    {
+	if (c <= strlen(name))
+	{
+	names[c][idx] = name[c];
+	}else{
+		names[c][idx] = '\0';
+	}
+
+    }
+
+
 }
 
 static void create_and_seed(const char *path, int camposn,
@@ -165,13 +177,13 @@ int main(void)
 {
     printf("=== Supermarket DBF Schema Creator ===\n\n");
 
-    create_and_seed("data/products.dbf", 14, setup_products);
-    create_and_seed("data/providers.dbf", 4, setup_providers);
-    create_and_seed("data/sales.dbf", 5, setup_sales);
-    create_and_seed("data/salesitems.dbf", 5, setup_salesitems);
-    create_and_seed("data/orders.dbf", 5, setup_orders);
+    create_and_seed("products.dbf", 14, setup_products);
+    create_and_seed("providers.dbf", 4, setup_providers);
+    create_and_seed("sales.dbf", 5, setup_sales);
+    create_and_seed("salesitems.dbf", 5, setup_salesitems);
+    create_and_seed("orders.dbf", 5, setup_orders);
 
-    printf("\n=== All schemas created in data/ ===\n");
+    printf("\n=== All schemas created ===\n");
     printf("Run seed_data.prg to populate sample data.\n");
     return 0;
 }

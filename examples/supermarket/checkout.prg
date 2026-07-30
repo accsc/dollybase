@@ -2,7 +2,9 @@
 
 SET TALK OFF
 
+* Load module files so their procedures are registered
 DO sm_init
+DO sm_sales
 
 DO cart_clear
 cART_GRAND_TOTAL = 0

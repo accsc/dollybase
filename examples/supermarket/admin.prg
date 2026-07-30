@@ -2,6 +2,16 @@
 
 SET TALK OFF
 
+* Load all module files so their procedures are registered
+DO sm_init
+DO sm_menus
+DO sm_products
+DO sm_providers
+DO sm_stock
+DO sm_orders
+DO sm_reports
+DO sm_sales
+
 DO sm_init
 
 gChoice = 0

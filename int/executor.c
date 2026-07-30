@@ -186,6 +186,7 @@ static ExecStatus exec_close(Token **cur);
 static ExecStatus exec_go(Token **cur);
 static ExecStatus exec_print(Token **cur);
 static ExecStatus exec_assign(Token **cur);
+static ExecStatus exec_assign_macro(Token **cur);
 static ExecStatus exec_accept(Token **cur);
 static ExecStatus exec_delete(Token **cur);
 static ExecStatus exec_recall(Token **cur);
@@ -413,6 +414,19 @@ static ExecStatus exec_statement(Token **cur)
     /* Assignment: <ident> = <expr> or <ident> := <expr> */
     if (t->type == TOK_IDENT) {
         return exec_assign(cur);
+    }
+
+    /* Macro-expanded assignment: &<varname> = <expr> */
+    if (t->type == TOK_OP_LOGIC && strcmp(t->value, "&") == 0) {
+        Token *next = t->next;
+        /* Check if this looks like an assignment: &<name> = or &<name> := */
+        if (next && next->type == TOK_IDENT) {
+            Token *after = next->next;
+            if (after && ((after->type == TOK_OP_COMPARISON && strcmp(after->value, "=") == 0) ||
+                          after->type == TOK_ASSIGN)) {
+                return exec_assign_macro(cur);
+            }
+        }
     }
 
     /* Expression statement: evaluate and discard result (e.g., INKEY(1), EOF()) */
@@ -1147,6 +1161,47 @@ static ExecStatus exec_assign(Token **cur)
 
     ExprValue val = parse_expr(cur);
     vars_set(varname, &val);
+    free_value(&val);
+
+    return EXEC_OK;
+}
+
+/* Handle &varname = expr (macro-expanded variable assignment) */
+static ExecStatus exec_assign_macro(Token **cur)
+{
+    /* cur points at '&' (TOK_OP_LOGIC) */
+    *cur = (*cur)->next; /* skip '&' */
+
+    /* Read the identifier name, then look up its value to get the
+       actual target variable name. Do NOT use parse_expr — it would
+       consume the '=' as a comparison operator. */
+    char ident[256] = "";
+    if (*cur && (*cur)->type == TOK_IDENT) {
+        strncpy(ident, (*cur)->value, sizeof(ident) - 1);
+        ident[sizeof(ident) - 1] = '\0';
+        *cur = (*cur)->next;
+    } else {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    /* Resolve: the identifier holds the name of the target variable */
+    ExprValue name_val = vars_get(ident);
+    char *name_str = val_to_string(&name_val);
+    free_value(&name_val);
+
+    /* Skip '=' or ':=' */
+    if (*cur && (*cur)->type == TOK_OP_COMPARISON && strcmp((*cur)->value, "=") == 0) {
+        *cur = (*cur)->next;
+    } else if (*cur && (*cur)->type == TOK_ASSIGN) {
+        *cur = (*cur)->next;
+    }
+
+    ExprValue val = parse_expr(cur);
+    if (name_str && *name_str) {
+        vars_set(name_str, &val);
+    }
+    free(name_str);
     free_value(&val);
 
     return EXEC_OK;

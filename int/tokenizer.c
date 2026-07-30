@@ -34,6 +34,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"ASC",          KW_ASC},
     {"AT",           KW_AT_FUNC},
     {"ATC",          KW_ATC},
+    {"AVERAGE",      KW_AVERAGE},
     {"BETWEEN",      KW_BETWEEN},
     {"BOF",          KW_BOF},
     {"BROWSE",       KW_BROWSE},

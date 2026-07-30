@@ -73,6 +73,7 @@ typedef enum {
     KW_ACCEPT,
     KW_ALL,
     KW_ALIAS,
+    KW_AVERAGE,
     KW_DBF,
     KW_NEXT,
     KW_RECORD,

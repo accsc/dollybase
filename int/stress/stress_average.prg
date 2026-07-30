@@ -1,0 +1,49 @@
+* Stress test for AVERAGE command
+USE books
+
+* Test 1: AVERAGE single field (all records)
+? "Test 1: AVERAGE AN_EDICION (all records)"
+AVERAGE AN_EDICION
+
+* Test 2: AVERAGE TO variable
+? "Test 2: AVERAGE TO variable"
+AVERAGE AN_EDICION TO avgYear
+? "Average year = " + LTRIM(STR(avgYear, 6, 2))
+
+* Test 3: AVERAGE ALL explicit
+? "Test 3: AVERAGE ALL AN_EDICION"
+AVERAGE ALL AN_EDICION
+
+* Test 4: AVERAGE NEXT n
+? "Test 4: AVERAGE NEXT 5 AN_EDICION"
+GO TOP
+AVERAGE NEXT 5 AN_EDICION
+
+* Test 5: AVERAGE REST
+? "Test 5: AVERAGE REST AN_EDICION"
+GO 10
+AVERAGE REST AN_EDICION
+
+* Test 6: AVERAGE FOR condition
+? "Test 6: AVERAGE AN_EDICION FOR AN_EDICION >= 1990"
+AVERAGE AN_EDICION FOR AN_EDICION >= 1990
+
+* Test 7: AVERAGE FOR..WHILE
+? "Test 7: AVERAGE AN_EDICION FOR AN_EDICION >= 1980 WHILE AN_EDICION < 2000"
+AVERAGE AN_EDICION FOR AN_EDICION >= 1980 WHILE AN_EDICION < 2000
+
+* Test 8: AVERAGE RECORD n
+? "Test 8: AVERAGE RECORD 5 AN_EDICION"
+AVERAGE RECORD 5 AN_EDICION
+
+* Test 9: AVERAGE with expression
+? "Test 9: AVERAGE AN_EDICION + 10 TO exprAvg"
+AVERAGE AN_EDICION + 10 TO exprAvg
+? "Expression average = " + LTRIM(STR(exprAvg, 6, 2))
+
+* Test 10: AVERAGE multiple fields
+? "Test 10: AVERAGE AN_EDICION, AN_EDICION (duplicate to test multi)"
+AVERAGE AN_EDICION, AN_EDICION
+
+? "=== AVERAGE tests complete ==="
+QUIT

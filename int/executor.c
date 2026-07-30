@@ -14,6 +14,7 @@
 #include "executor.h"
 #include "parser.h"
 #include "variables.h"
+#include "exprvalue.h"
 #include "workarea.h"
 #include "ui.h"
 
@@ -183,6 +184,7 @@ static ExecStatus exec_pack(Token **cur);
 static ExecStatus exec_wait(Token **cur);
 static ExecStatus exec_zap(Token **cur);
 static ExecStatus exec_replace(Token **cur);
+static ExecStatus exec_average(Token **cur);
 static ExecStatus exec_append(Token **cur);
 static ExecStatus exec_display(Token **cur);
 static ExecStatus exec_list(Token **cur);
@@ -368,6 +370,7 @@ static ExecStatus exec_statement(Token **cur)
             case KW_WAIT:     return exec_wait(cur);
             case KW_ZAP:      return exec_zap(cur);
             case KW_REPLACE:  return exec_replace(cur);
+            case KW_AVERAGE:  return exec_average(cur);
             case KW_ACCEPT:   return exec_accept(cur);
             case KW_APPEND:   return exec_append(cur);
             case KW_DISPLAY:  return exec_display(cur);
@@ -2143,6 +2146,219 @@ static ExecStatus exec_replace(Token **cur)
     } else {
         /* No scope — replace current record only */
         apply_replacements(pairs, npairs);
+    }
+
+    if (!si.scope_next && !si.scope_rest)
+        gotos(wa_db_ptr(), saved_rec);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* AVERAGE field1, field2 ... [scope] [FOR expr] [WHILE expr] [TO var] */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_average(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "AVERAGE" */
+
+    /* Parse scope modifier before field list */
+    ScopeInfo si;
+    si.scope_all = 0;
+    si.scope_next = 0;
+    si.scope_next_start = 0;
+    si.scope_record = 0;
+    si.scope_rest = 0;
+    si.for_start = NULL;
+    si.while_start = NULL;
+
+    /* Check for scope keywords before field list */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ALL) {
+        si.scope_all = 1;
+        *cur = (*cur)->next;
+    } else if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT) {
+        *cur = (*cur)->next;
+        si.scope_next = 1;
+        si.scope_next_start = wa_recno();
+        if (*cur && (*cur)->type == TOK_INTEGER) {
+            si.scope_next = atoi((*cur)->value);
+            *cur = (*cur)->next;
+        }
+    } else if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_RECORD) {
+        *cur = (*cur)->next;
+        if (*cur && (*cur)->type == TOK_INTEGER) {
+            si.scope_record = atoi((*cur)->value);
+            *cur = (*cur)->next;
+        }
+    } else if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_REST) {
+        si.scope_rest = 1;
+        *cur = (*cur)->next;
+    }
+
+    /* Collect comma-separated field expressions */
+    Token *exprs[64];
+    int nexprs = 0;
+
+    if (*cur && (*cur)->type == TOK_IDENT) {
+        Token *scan = skip_expression(*cur);
+        exprs[nexprs++] = *cur;
+        *cur = scan;
+
+        while (*cur && (*cur)->type == TOK_COMMA && nexprs < 64) {
+            *cur = (*cur)->next; /* skip comma */
+            exprs[nexprs++] = *cur;
+            scan = skip_expression(*cur);
+            *cur = scan;
+        }
+    }
+
+    /* Parse FOR/WHILE after field list */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_FOR) {
+        si.for_start = (*cur)->next;
+        int paren_depth = 0;
+        while (*cur && !is_eol_or_eof(*cur)) {
+            if ((*cur)->type == TOK_LPAREN) paren_depth++;
+            else if ((*cur)->type == TOK_RPAREN) { if (paren_depth > 0) paren_depth--; }
+            else if (paren_depth == 0 &&
+                     (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_WHILE)
+                break;
+            *cur = (*cur)->next;
+        }
+    }
+
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_WHILE) {
+        si.while_start = (*cur)->next;
+    }
+
+    /* Parse optional TO var */
+    char target_var[64] = {0};
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_TO) {
+        *cur = (*cur)->next; /* skip "TO" */
+        if (*cur && (*cur)->type == TOK_IDENT) {
+            strncpy(target_var, (*cur)->value, sizeof(target_var) - 1);
+        }
+    }
+
+    skip_to_eol(cur);
+
+    DATABASEDBF *db = wa_db();
+    if (!db)
+        return EXEC_OK;
+
+    int total = reccount(db);
+    int saved_rec = wa_recno();
+
+    /* Accumulate sums and counts for each expression */
+    double sums[64];
+    int counts[64];
+    memset(sums, 0, sizeof(sums));
+    memset(counts, 0, sizeof(counts));
+
+    int start_rec = 1;
+    int end_rec = total;
+
+    if (si.scope_record) {
+        start_rec = si.scope_record;
+        end_rec = si.scope_record;
+    } else if (si.scope_next) {
+        start_rec = si.scope_next_start;
+        end_rec = start_rec + si.scope_next - 1;
+        if (end_rec > total) end_rec = total;
+    } else if (si.scope_rest) {
+        start_rec = wa_recno();
+        end_rec = total;
+    } else if (nexprs == 0) {
+        /* AVERAGE with no fields and no scope = ALL records */
+        start_rec = 1;
+        end_rec = total;
+    } else {
+        /* AVERAGE with fields but no scope = ALL records */
+        start_rec = 1;
+        end_rec = total;
+    }
+
+    if (nexprs > 0) {
+        /* Specific field expressions */
+        for (int rec = start_rec; rec <= end_rec; rec++) {
+            gotos(wa_db_ptr(), rec);
+
+            if (si.for_start || si.while_start) {
+                int stop = 0;
+                if (!eval_scope(&si, &stop)) {
+                    if (stop) break;
+                    continue;
+                }
+            }
+
+            for (int i = 0; i < nexprs; i++) {
+                Token *ecur = exprs[i];
+                ExprValue ev = parse_expr(&ecur);
+                if (ev.type == VAL_INTEGER || ev.type == VAL_REAL) {
+                    sums[i] += ev.data.rval;
+                    counts[i]++;
+                }
+            }
+        }
+    } else {
+        /* No fields specified — average all numeric fields */
+        double field_sums[128];
+        int field_counts[128];
+        memset(field_sums, 0, sizeof(field_sums));
+        memset(field_counts, 0, sizeof(field_counts));
+
+        for (int rec = start_rec; rec <= end_rec; rec++) {
+            gotos(wa_db_ptr(), rec);
+
+            if (si.for_start || si.while_start) {
+                int stop = 0;
+                if (!eval_scope(&si, &stop)) {
+                    if (stop) break;
+                    continue;
+                }
+            }
+
+            for (int f = 0; f < db->camposn; f++) {
+                char ftype = db->fields.tipos[f];
+                if (ftype == 'N' || ftype == 'n' || ftype == 'F' || ftype == 'f') {
+                    char *fval = NULL;
+                    get_field(db, f + 1, &fval);
+                    if (fval && *fval) {
+                        field_sums[f] += atof(fval);
+                        field_counts[f]++;
+                    }
+                }
+            }
+        }
+
+        /* Print results for all numeric fields */
+        for (int f = 0; f < db->camposn; f++) {
+            char ftype = db->fields.tipos[f];
+            if (ftype == 'N' || ftype == 'n' || ftype == 'F' || ftype == 'f') {
+                double avg = (field_counts[f] > 0) ? (field_sums[f] / field_counts[f]) : 0.0;
+                if (strlen(target_var) > 0 && f == 0) {
+                    ExprValue v = val_real(avg);
+                    vars_set(target_var, &v);
+                } else {
+                    { char buf[128]; snprintf(buf, sizeof(buf), "%-12s %g\n", db->fields.names[f], avg); addstr(buf); }
+                }
+            }
+        }
+
+        if (!si.scope_next && !si.scope_rest)
+            gotos(wa_db_ptr(), saved_rec);
+        return EXEC_OK;
+    }
+
+    if (strlen(target_var) > 0 && nexprs > 0) {
+        /* Store result in variable */
+        double avg = (counts[0] > 0) ? (sums[0] / counts[0]) : 0.0;
+        ExprValue v = val_real(avg);
+        vars_set(target_var, &v);
+    } else {
+        /* Print results */
+        for (int i = 0; i < nexprs; i++) {
+            double avg = (counts[i] > 0) ? (sums[i] / counts[i]) : 0.0;
+            { char buf[128]; snprintf(buf, sizeof(buf), "Average: %g\n", avg); addstr(buf); }
+        }
     }
 
     if (!si.scope_next && !si.scope_rest)

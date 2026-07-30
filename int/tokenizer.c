@@ -51,6 +51,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"COLOR",        KW_COLOR},
     {"CONSOLE",      KW_CONSOLE},
     {"CONTINUE",     KW_CONTINUE},
+    {"COUNT",        KW_COUNT},
     {"CREATE",       KW_CREATE},
     {"CTOD",         KW_CTOD},
     {"DATE",         KW_DATE},

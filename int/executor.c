@@ -194,9 +194,12 @@ static ExecStatus exec_select(Token **cur);
 static ExecStatus exec_index(Token **cur);
 static ExecStatus exec_locate(Token **cur);
 static ExecStatus exec_continue(Token **cur);
+static ExecStatus exec_count(Token **cur);
 static ExecStatus exec_at(Token **cur);
 static ExecStatus exec_read(Token **cur);
 static ExecStatus exec_clear(Token **cur);
+static ExecStatus exec_clear_all(Token **cur);
+static ExecStatus exec_clear_memory(Token **cur);
 static ExecStatus exec_text(Token **cur);
 static ExecStatus exec_create(Token **cur);
 
@@ -380,9 +383,12 @@ static ExecStatus exec_statement(Token **cur)
             case KW_INDEX:    return exec_index(cur);
             case KW_LOCATE:   return exec_locate(cur);
             case KW_CONTINUE: return exec_continue(cur);
+            case KW_COUNT:    return exec_count(cur);
             case KW_READ:     return exec_read(cur);
-            case KW_CLEAR:    return exec_clear(cur);
-            case KW_TEXT:     return exec_text(cur);
+            case KW_CLEAR:      return exec_clear(cur);
+            case KW_CLEAR_ALL:      return exec_clear_all(cur);
+            case KW_CLEAR_MEMORY:   return exec_clear_memory(cur);
+            case KW_TEXT:           return exec_text(cur);
             case KW_BROWSE:   return exec_browse(cur);
             default:
                 /* Unknown keyword — treat as expression or skip */
@@ -3045,6 +3051,168 @@ static ExecStatus exec_clear(Token **cur)
     (*cur) = (*cur)->next; /* skip "CLEAR" */
     skip_to_eol(cur);
     ui_clear();
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* CLEAR ALL                                                           */
+/* Closes all databases, clears all memory variables, resets workareas */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_clear_all(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "CLEAR ALL" */
+    skip_to_eol(cur);
+
+    /* Close all workareas (frees DBF handles, resets aliases) */
+    wa_close_all();
+
+    /* Clear all memory variables */
+    vars_init();
+
+    /* Reset the screen */
+    ui_clear();
+
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* CLEAR MEMORY                                                        */
+/* Clears all memory variables only — databases stay open              */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_clear_memory(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "CLEAR MEMORY" */
+    skip_to_eol(cur);
+
+    /* Clear all memory variables — databases remain open */
+    vars_init();
+
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* COUNT [NEXT n] [FOR expr] [WHILE expr] [TO var]                    */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_count(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "COUNT" */
+
+    /* Parse scope modifier */
+    ScopeInfo si;
+    si.scope_all = 0;
+    si.scope_next = 0;
+    si.scope_next_start = 0;
+    si.scope_record = 0;
+    si.scope_rest = 0;
+    si.for_start = NULL;
+    si.while_start = NULL;
+
+    /* Check for NEXT n */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_NEXT) {
+        *cur = (*cur)->next;
+        si.scope_next = 1;
+        si.scope_next_start = wa_recno();
+        if (*cur && (*cur)->type == TOK_INTEGER) {
+            si.scope_next = atoi((*cur)->value);
+            *cur = (*cur)->next;
+        }
+    } else if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ALL) {
+        si.scope_all = 1;
+        *cur = (*cur)->next;
+    } else if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_REST) {
+        si.scope_rest = 1;
+        *cur = (*cur)->next;
+    } else if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_RECORD) {
+        *cur = (*cur)->next;
+        if (*cur && (*cur)->type == TOK_INTEGER) {
+            si.scope_record = atoi((*cur)->value);
+            *cur = (*cur)->next;
+        }
+    }
+
+    /* Parse FOR <expr> */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_FOR) {
+        si.for_start = (*cur)->next;
+        int paren_depth = 0;
+        while (*cur && !is_eol_or_eof(*cur)) {
+            if ((*cur)->type == TOK_LPAREN) paren_depth++;
+            else if ((*cur)->type == TOK_RPAREN) { if (paren_depth > 0) paren_depth--; }
+            else if (paren_depth == 0 &&
+                     (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_WHILE)
+                break;
+            *cur = (*cur)->next;
+        }
+    }
+
+    /* Parse WHILE <expr> */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_WHILE) {
+        si.while_start = (*cur)->next;
+    }
+
+    /* Parse optional TO var */
+    char target_var[64] = {0};
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_TO) {
+        *cur = (*cur)->next;
+        if (*cur && (*cur)->type == TOK_IDENT) {
+            strncpy(target_var, (*cur)->value, sizeof(target_var) - 1);
+        }
+    }
+
+    skip_to_eol(cur);
+
+    DATABASEDBF *db = wa_db();
+    if (!db)
+        return EXEC_OK;
+
+    int total = reccount(db);
+    int saved_rec = wa_recno();
+
+    int start_rec = 1;
+    int end_rec = total;
+
+    if (si.scope_record) {
+        start_rec = si.scope_record;
+        end_rec = si.scope_record;
+    } else if (si.scope_next) {
+        start_rec = si.scope_next_start;
+        end_rec = start_rec + si.scope_next - 1;
+        if (end_rec > total) end_rec = total;
+    } else if (si.scope_rest) {
+        start_rec = wa_recno();
+        end_rec = total;
+    }
+
+    int count = 0;
+
+    for (int rec = start_rec; rec <= end_rec; rec++) {
+        gotos(wa_db_ptr(), rec);
+
+        if (si.for_start || si.while_start) {
+            int stop = 0;
+            if (!eval_scope(&si, &stop)) {
+                if (stop) break;
+                continue;
+            }
+        }
+
+        count++;
+    }
+
+    /* Store or print result */
+    if (strlen(target_var) > 0) {
+        ExprValue v = val_real((double)count);
+        vars_set(target_var, &v);
+    } else {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "Records counted: %d\n", count);
+        addstr(buf);
+    }
+
+    if (!si.scope_next && !si.scope_rest)
+        gotos(wa_db_ptr(), saved_rec);
     return EXEC_OK;
 }
 

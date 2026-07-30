@@ -83,6 +83,7 @@ typedef enum {
     KW_CLOSE,
     KW_CREATE,
     KW_CONTINUE,
+    KW_COUNT,
     KW_DELETE,
     KW_DELETED,
     KW_DISPLAY,

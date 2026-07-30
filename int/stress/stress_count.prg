@@ -1,0 +1,68 @@
+* Stress test for COUNT command
+USE books
+
+* Test 1: COUNT (all records)
+? "Test 1: COUNT (all)"
+COUNT
+
+* Test 2: COUNT TO variable
+? "Test 2: COUNT TO var"
+COUNT TO totalRecs
+? "  totalRecs = " + LTRIM(STR(totalRecs))
+
+* Test 3: COUNT ALL explicit
+? "Test 3: COUNT ALL"
+COUNT ALL
+
+* Test 4: COUNT FOR condition
+? "Test 4: COUNT FOR AN_EDICION >= 1990"
+COUNT FOR AN_EDICION >= 1990
+
+* Test 5: COUNT FOR TO variable
+? "Test 5: COUNT FOR AN_EDICION >= 1990 TO cnt"
+COUNT FOR AN_EDICION >= 1990 TO cnt
+? "  cnt = " + LTRIM(STR(cnt))
+
+* Test 6: COUNT FOR..WHILE
+? "Test 6: COUNT FOR AN_EDICION >= 1980 WHILE RECNO() <= 20"
+COUNT FOR AN_EDICION >= 1980 WHILE RECNO() <= 20
+
+* Test 7: COUNT NEXT n
+? "Test 7: COUNT NEXT 5"
+GO TOP
+COUNT NEXT 5
+
+* Test 8: COUNT NEXT n FOR condition
+? "Test 8: COUNT NEXT 10 FOR AN_EDICION >= 1990"
+GO TOP
+COUNT NEXT 10 FOR AN_EDICION >= 1990
+
+* Test 9: COUNT NEXT n FOR..WHILE TO var
+? "Test 9: COUNT NEXT 10 FOR AN_EDICION >= 1980 WHILE AN_EDICION < 2000 TO c2"
+GO TOP
+COUNT NEXT 10 FOR AN_EDICION >= 1980 WHILE AN_EDICION < 2000 TO c2
+? "  c2 = " + LTRIM(STR(c2))
+
+* Test 10: COUNT REST
+? "Test 10: COUNT REST"
+GO 20
+COUNT REST
+
+* Test 11: COUNT RECORD n
+? "Test 11: COUNT RECORD 5"
+COUNT RECORD 5
+
+* Test 12: COUNT FOR with string condition
+? "Test 12: COUNT FOR LEFT(TITULO, 2) = 'EN'"
+COUNT FOR LEFT(TITULO, 2) = "EN"
+
+* Test 13: COUNT FOR with AND
+? "Test 13: COUNT FOR AN_EDICION >= 1990 AND LEN(TITULO) > 10"
+COUNT FOR AN_EDICION >= 1990 AND LEN(TITULO) > 10
+
+* Test 14: COUNT FOR no match
+? "Test 14: COUNT FOR AN_EDICION >= 9999"
+COUNT FOR AN_EDICION >= 9999
+
+? "=== COUNT tests complete ==="
+QUIT

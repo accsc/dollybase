@@ -3012,8 +3012,23 @@ static ExecStatus exec_at(Token **cur)
         varname[sizeof(varname) - 1] = '\0';
         rcur = rcur->next;
 
-        /* Default field length */
+        /* Scan ahead for PICTURE to determine field length */
         int fld_len = 10;
+        {
+            Token *scan = rcur;
+            while (scan && !is_eol_or_eof(scan)) {
+                if (scan->type == TOK_KEYWORD && scan->keyword_id == KW_PICTURE) {
+                    Token *pval = scan->next;
+                    if (pval && pval->type == TOK_STRING) {
+                        int pic_len = (int)strlen(pval->value);
+                        if (pic_len > fld_len)
+                            fld_len = pic_len;
+                    }
+                    break;
+                }
+                scan = scan->next;
+            }
+        }
 
         UiGetField *gf = ui_get_add(row, col, varname, fld_len);
         (void)gf; /* suppress unused warning */

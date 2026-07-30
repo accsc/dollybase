@@ -5,6 +5,13 @@ SET TALK OFF
 * Load module files so their procedures are registered
 DO sm_init
 DO sm_sales
+DO sale_counter_reset
+DO sale_record
+DO cart_clear
+DO cart_add
+DO cart_remove_last
+
+DO init_system
 
 DO cart_clear
 cART_GRAND_TOTAL = 0
@@ -53,14 +60,10 @@ DO WHILE .T.
   @ 25, 1 SAY "  [Enter=Add] [F2=Checkout] [F3=Remove] [Esc=Cancel]"
   READ
 
-  * Esc pressed (empty field) — check for special commands
   IF inputBarcode = ""
-    * User pressed Esc on empty field — could be cancel
-    * Check next key to distinguish
     LOOP
   ENDIF
 
-  * Special commands typed in the barcode field
   IF inputBarcode = "F2" .OR. inputBarcode = "f2"
     IF cART_COUNT > 0
       gPaymentMethod = "CASH"
@@ -90,7 +93,6 @@ DO WHILE .T.
     EXIT
   ENDIF
 
-  * Normal barcode entry
   SELECT 1
   LOCATE FOR A->BARCODE = inputBarcode
 
@@ -105,67 +107,3 @@ ENDDO
 
 CLOSE DATABASES
 RETURN
-
-PROCEDURE cart_clear
-  STORE 0 TO cART_COUNT, cART_GRAND_TOTAL
-  i = 1
-  DO WHILE i <= 50
-    cart_var = "cART" + LTRIM(STR(i)) + "_BARCODE"
-    &cart_var = ""
-    cart_var = "cART" + LTRIM(STR(i)) + "_NAME"
-    &cart_var = ""
-    cart_var = "cART" + LTRIM(STR(i)) + "_QTY"
-    &cart_var = 0
-    cart_var = "cART" + LTRIM(STR(i)) + "_PRICE"
-    &cart_var = 0
-    cart_var = "cART" + LTRIM(STR(i)) + "_TOTAL"
-    &cart_var = 0
-    i = i + 1
-  ENDDO
-  RETURN
-
-PROCEDURE cart_add
-  PARAMETERS pBarcode, pName, pQty, pPrice
-
-  cART_COUNT = cART_COUNT + 1
-  idx = cART_COUNT
-
-  cart_var = "cART" + LTRIM(STR(idx)) + "_BARCODE"
-  &cart_var = pBarcode
-
-  cart_var = "cART" + LTRIM(STR(idx)) + "_NAME"
-  &cart_var = pName
-
-  cart_var = "cART" + LTRIM(STR(idx)) + "_QTY"
-  &cart_var = pQty
-
-  cart_var = "cART" + LTRIM(STR(idx)) + "_PRICE"
-  &cart_var = pPrice
-
-  cart_var = "cART" + LTRIM(STR(idx)) + "_TOTAL"
-  &cart_var = pQty * pPrice
-
-  cART_GRAND_TOTAL = cART_GRAND_TOTAL + (pQty * pPrice)
-
-  RETURN
-
-PROCEDURE cart_remove_last
-  IF cART_COUNT > 0
-    idx = cART_COUNT
-    cart_var = "cART" + LTRIM(STR(idx)) + "_TOTAL"
-    item_total = &cart_var
-    cART_GRAND_TOTAL = cART_GRAND_TOTAL - item_total
-    cART_COUNT = cART_COUNT - 1
-
-    cart_var = "cART" + LTRIM(STR(idx)) + "_BARCODE"
-    &cart_var = ""
-    cart_var = "cART" + LTRIM(STR(idx)) + "_NAME"
-    &cart_var = ""
-    cart_var = "cART" + LTRIM(STR(idx)) + "_QTY"
-    &cart_var = 0
-    cart_var = "cART" + LTRIM(STR(idx)) + "_PRICE"
-    &cart_var = 0
-    cart_var = "cART" + LTRIM(STR(idx)) + "_TOTAL"
-    &cart_var = 0
-  ENDIF
-  RETURN

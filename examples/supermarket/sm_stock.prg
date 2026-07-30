@@ -1,4 +1,4 @@
-* sm_stock.prg - Stock management
+* sm_stock.prg - Stock management menu
 
 PROCEDURE sm_stock
   CLEAR
@@ -20,84 +20,5 @@ PROCEDURE sm_stock
     CASE gSubChoice = 3
       DO stock_full
   ENDCASE
-
-  RETURN
-
-PROCEDURE stock_adjust
-  ACCEPT "Enter barcode: " TO sBarcode
-  ACCEPT "Enter quantity to add: " TO sQty
-
-  SELECT 1
-  LOCATE FOR A->BARCODE = sBarcode
-
-  IF FOUND()
-    REPLACE A->STOCK WITH A->STOCK + VAL(sQty)
-    ? "Stock updated. New stock: " + LTRIM(STR(A->STOCK))
-  ELSE
-    ? "Product not found."
-  ENDIF
-
-  WAIT
-
-  RETURN
-
-PROCEDURE stock_low
-  SELECT 1
-  GO TOP
-
-  CLEAR
-  ? "----------------------------------------"
-  ? "   LOW STOCK ALERT"
-  ? "----------------------------------------"
-  ? ""
-
-  cnt = 0
-  DO WHILE .NOT. EOF()
-    IF A->STOCK <= A->MIN_STOCK .AND. .NOT. DELETED()
-      cnt = cnt + 1
-      ? LTRIM(STR(cnt)) + ". [" + A->BARCODE + "] " + A->NAME
-      ? "   Stock: " + LTRIM(STR(A->STOCK)) + " / Min: " + LTRIM(STR(A->MIN_STOCK))
-      ? ""
-    ENDIF
-    SKIP
-  ENDDO
-
-  IF cnt = 0
-    ? "All products are above minimum stock levels."
-  ELSE
-    ? "----------------------------------------"
-    ? "Alert: " + LTRIM(STR(cnt)) + " product(s) below minimum"
-  ENDIF
-
-  ? "----------------------------------------"
-  WAIT
-
-  RETURN
-
-PROCEDURE stock_full
-  SELECT 1
-  GO TOP
-
-  CLEAR
-  ? "----------------------------------------"
-  ? "   FULL STOCK REPORT"
-  ? "----------------------------------------"
-  ? REPLICATE("-", 60)
-  ? "Barcode      Name                      Price    Stock  Min"
-  ? REPLICATE("-", 60)
-
-  cnt = 0
-  DO WHILE .NOT. EOF()
-    IF .NOT. DELETED()
-      cnt = cnt + 1
-      ? LEFT(A->BARCODE, 13) + "  " + LEFT(A->NAME, 25) + "  " + LTRIM(STR(A->PRICE, 8, 2)) + "  " + LTRIM(STR(A->STOCK, 5)) + "  " + LTRIM(STR(A->MIN_STOCK, 3))
-    ENDIF
-    SKIP
-  ENDDO
-
-  ? REPLICATE("-", 60)
-  ? "Total: " + LTRIM(STR(cnt)) + " products"
-  ? "----------------------------------------"
-  WAIT
 
   RETURN

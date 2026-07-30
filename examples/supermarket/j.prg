@@ -1,5 +1,6 @@
 use products
 
-display structure 
+display structure
 
-list all
+list
+

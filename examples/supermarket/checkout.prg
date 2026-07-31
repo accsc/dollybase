@@ -90,6 +90,9 @@ DO WHILE .T.
   LOCATE FOR A->BARCODE = inputBarcode
 
   IF FOUND()
+    ? A->NAME
+    ? A->PRICE
+    ? A->DESCRIPTION
     DO cart_add WITH inputBarcode, A->NAME, 1, A->PRICE
     LOOP
   ELSE

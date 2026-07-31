@@ -622,7 +622,8 @@ static ExprValue parse_primary(Token **cur, ParseError *err) {
                 /* ALIAS->FIELD access — resolve alias to work area */
                 const char *alias = tok->value;
                 *cur = (*cur)->next; /* skip -> */
-                if (*cur && (*cur)->type == TOK_IDENT) {
+                /* Field name can be TOK_IDENT or TOK_KEYWORD (e.g. STATUS, DATE) */
+                if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_KEYWORD)) {
                     const char *fieldname = (*cur)->value;
                     int area = wa_alias_to_area(alias);
                     if (area < 0)

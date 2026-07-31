@@ -1153,7 +1153,45 @@ static ExecStatus exec_assign(Token **cur)
     char varname[256];
     strncpy(varname, (*cur)->value, sizeof(varname) - 1);
     varname[sizeof(varname) - 1] = '\0';
-    *cur = (*cur)->next; /* skip variable name */
+    *cur = (*cur)->next; /* skip first identifier */
+
+    /* Check for alias->field assignment: A->FIELD = expr */
+    if (*cur && (*cur)->type == TOK_ARROW) {
+        *cur = (*cur)->next; /* skip -> */
+        /* Field name can be TOK_IDENT or TOK_KEYWORD (e.g. STATUS, DATE) */
+        if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_KEYWORD)) {
+            char fieldname[256];
+            strncpy(fieldname, (*cur)->value, sizeof(fieldname) - 1);
+            fieldname[sizeof(fieldname) - 1] = '\0';
+            *cur = (*cur)->next; /* skip field name */
+
+            /* Resolve alias to work area (0-based index) */
+            int area = wa_alias_to_area(varname);
+            if (area < 0)
+                area = wa_get_selected(); /* fallback */
+
+            /* Save current selection (0-based) and switch to target area (wa_select wants 1-based) */
+            int saved_area = wa_get_selected();
+            wa_select(area + 1);
+
+            /* Skip '=' or ':=' */
+            if (*cur && (*cur)->type == TOK_OP_COMPARISON && strcmp((*cur)->value, "=") == 0) {
+                *cur = (*cur)->next;
+            } else if (*cur && (*cur)->type == TOK_ASSIGN) {
+                *cur = (*cur)->next;
+            }
+
+            ExprValue val = parse_expr(cur);
+            char *s = val_to_string(&val);
+            wa_replace(fieldname, s);
+            free(s);
+            free_value(&val);
+
+            /* Restore original selection (saved_area is 0-based, wa_select wants 1-based) */
+            wa_select(saved_area + 1);
+            return EXEC_OK;
+        }
+    }
 
     /* Skip '=' or ':=' */
     if (*cur && (*cur)->type == TOK_OP_COMPARISON && strcmp((*cur)->value, "=") == 0) {

@@ -241,7 +241,8 @@ def test_admin_sales_menu():
         print(screen)
         print("---")
         assert "SALES HISTORY" in screen
-        print("PASS: Sales history displays")
+        assert "2026-07-28" in screen, "Date formatting broken (should show YYYY-MM-DD)"
+        print("PASS: Sales history displays with correct dates")
 
         dismiss_wait(a)
         a.wait_for("SUPERMARKET MANAGEMENT SYSTEM")

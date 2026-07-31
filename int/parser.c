@@ -642,9 +642,20 @@ static ExprValue parse_primary(Token **cur, ParseError *err) {
                                         result = val_real(d);
                                     break;
                                 }
-                                case 'D':
-                                    result = val_date(val);
+                                case 'D': {
+                                    /* DBF dates are YYYYMMDD; internal format is YYYY-MM-DD */
+                                    if (strlen(val) == 8 && !strchr(val, '-')) {
+                                        char formatted[12];
+                                        snprintf(formatted, sizeof(formatted),
+                                                 "%c%c%c%c-%c%c-%c%c",
+                                                 val[0], val[1], val[2], val[3],
+                                                 val[4], val[5], val[6], val[7]);
+                                        result = val_date(formatted);
+                                    } else {
+                                        result = val_date(val);
+                                    }
                                     break;
+                                }
                                 case 'L':
                                     result = val_logical(val[0] == 'T' || val[0] == 'Y');
                                     break;
@@ -689,9 +700,20 @@ static ExprValue parse_primary(Token **cur, ParseError *err) {
                                     result = val_real(d);
                                 break;
                             }
-                            case 'D':
-                                result = val_date(val);
+                            case 'D': {
+                                /* DBF dates are YYYYMMDD; internal format is YYYY-MM-DD */
+                                if (strlen(val) == 8 && !strchr(val, '-')) {
+                                    char formatted[12];
+                                    snprintf(formatted, sizeof(formatted),
+                                             "%c%c%c%c-%c%c-%c%c",
+                                             val[0], val[1], val[2], val[3],
+                                             val[4], val[5], val[6], val[7]);
+                                    result = val_date(formatted);
+                                } else {
+                                    result = val_date(val);
+                                }
                                 break;
+                            }
                             case 'L':
                                 result = val_logical(val[0] == 'T' || val[0] == 'Y');
                                 break;

@@ -588,9 +588,29 @@ int wa_replace(const char *fieldname, const char *value)
 {
     DATABASEDBF *db = wa_db();
     if (!db) return -1;
-    char *latin1 = utf8_to_cp437(value);
-    int rc = replace(db, (char *)fieldname, latin1 ? latin1 : (char *)value);
+
+    /* DBF date fields store YYYYMMDD (8 bytes, no dashes).
+       Our internal format is YYYY-MM-DD (10 chars). Strip dashes. */
+    int fidx = field_to_number(db, (char *)fieldname);
+    char ftype = dfield_type(db, fidx);
+    char *write_val = (char *)value;
+    char *stripped = NULL;
+
+    if (ftype == 'D' && strlen(value) == 10 && value[4] == '-' && value[7] == '-') {
+        /* Convert YYYY-MM-DD -> YYYYMMDD */
+        stripped = malloc(9);
+        if (stripped) {
+            sprintf(stripped, "%c%c%c%c%c%c%c%c",
+                    value[0], value[1], value[2], value[3],
+                    value[5], value[6], value[8], value[9]);
+            write_val = stripped;
+        }
+    }
+
+    char *latin1 = utf8_to_cp437(write_val);
+    int rc = replace(db, (char *)fieldname, latin1 ? latin1 : write_val);
     free(latin1);
+    free(stripped);
     if (rc == 0)
         update_dbf_date(db);
     return rc;

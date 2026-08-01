@@ -1892,6 +1892,9 @@ static ExecStatus exec_delete(Token **cur)
         wa_delete();
     }
 
+    /* Update DBF header last-update date */
+    dbf_update_date(db);
+
     /* Restore cursor position */
     if (!si.scope_next && !si.scope_rest)
         gotos(wa_db_ptr(), saved_rec);
@@ -1990,6 +1993,9 @@ static ExecStatus exec_recall(Token **cur)
         wa_recall();
     }
 
+    /* Update DBF header last-update date */
+    dbf_update_date(db);
+
     if (!si.scope_next && !si.scope_rest)
         gotos(wa_db_ptr(), saved_rec);
     return EXEC_OK;
@@ -2003,6 +2009,8 @@ static ExecStatus exec_pack(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "PACK" */
     wa_pack();
+    /* Update DBF header last-update date */
+    { DATABASEDBF *db = wa_db(); if (db) dbf_update_date(db); }
     skip_to_eol(cur);
     return EXEC_OK;
 }
@@ -2199,6 +2207,8 @@ static ExecStatus exec_zap(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "ZAP" */
     wa_zap();
+    /* Update DBF header last-update date */
+    { DATABASEDBF *db = wa_db(); if (db) dbf_update_date(db); }
     skip_to_eol(cur);
     return EXEC_OK;
 }
@@ -2461,6 +2471,9 @@ static ExecStatus exec_replace(Token **cur)
         apply_replacements(pairs, npairs);
     }
 
+    /* Update DBF header last-update date */
+    dbf_update_date(db);
+
     if (!si.scope_next && !si.scope_rest)
         gotos(wa_db_ptr(), saved_rec);
     return EXEC_OK;
@@ -2687,6 +2700,8 @@ static ExecStatus exec_append(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "APPEND" */
     wa_append_blank();
+    /* Update DBF header last-update date */
+    { DATABASEDBF *db = wa_db(); if (db) dbf_update_date(db); }
     skip_to_eol(cur);
     return EXEC_OK;
 }

@@ -148,6 +148,7 @@ int field_name(DATABASEDBF *asp, int campon, char **name);
 void skip(DATABASEDBF **asp);
 DATABASEDBF skip_index(DATABASEDBF asp);
 void lupdate(DATABASEDBF *asp, char **date);
+void dbf_update_date(DATABASEDBF *asp);
 int reccount(DATABASEDBF *asp);
 int recno(DATABASEDBF *asp);
 int recsize(DATABASEDBF *asp);

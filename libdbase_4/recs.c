@@ -3,6 +3,7 @@
 #include "string.h"
 #include "unistd.h"
 #include "sys/stat.h"
+#include "time.h"
 #include "libdbase.h"
 
 DATABASEDBF skip_index(DATABASEDBF asp);
@@ -45,6 +46,32 @@ return;
 
 strcpy(*date,asp->date);
 return;
+}
+
+/* Update the DBF header last-update date to today.
+   Writes bytes 1-3 of the header (year, month, day) and updates asp->date. */
+void dbf_update_date(DATABASEDBF *asp)
+{
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    int year = t->tm_year % 100;  /* last 2 digits */
+    int mes  = t->tm_mon + 1;
+    int day  = t->tm_mday;
+
+    /* Update in-memory date string */
+    snprintf(asp->date, 10, "%d/%d/%d", day, mes, 2000 + year);
+
+    /* Write to DBF header (bytes 1-3: year, month, day) */
+    char dbf_name[1024];
+    snprintf(dbf_name, sizeof(dbf_name), "%s.dbf", asp->name);
+    FILE *f = fopen(dbf_name, "r+b");
+    if (f) {
+        fseek(f, 1, SEEK_SET);
+        fputc(year % 10, f);   /* last digit of year (dBase convention) */
+        fputc(mes, f);
+        fputc(day, f);
+        fclose(f);
+    }
 }
 
 int reccount(DATABASEDBF *asp)

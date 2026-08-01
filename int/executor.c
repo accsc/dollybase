@@ -20,6 +20,7 @@
 
 /* Global SET flags */
 int g_set_century = 1;  /* SET CENTURY ON by default (dBASE convention) */
+int g_set_exact = 0;    /* SET EXACT OFF by default (dBASE convention)  */
 
 /* SET ALTERNATE TO / SET CONSOLE state */
 static FILE *g_alternate_file = NULL;   /* SET ALTERNATE TO "file" */
@@ -1468,6 +1469,8 @@ static ExecStatus exec_set(Token **cur)
             g_set_century = on;
         } else if (setting == KW_CONSOLE) {
             g_set_console = on;
+        } else if (setting == KW_EXACT) {
+            g_set_exact = on;
         }
         (void)on; /* settings not yet wired to config */
         (*cur) = (*cur)->next;

@@ -5,6 +5,7 @@
 #include "exprvalue.h"
 
 #include <stdlib.h>
+extern int g_set_exact;  /* from executor.c — SET EXACT ON/OFF */
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -193,6 +194,18 @@ static int strcasecmp_portable(const char *a, const char *b) {
     return tolower((unsigned char)*a) - tolower((unsigned char)*b);
 }
 
+static int strncasecmp_portable(const char *a, const char *b, size_t n) {
+    while (n && *a && *b) {
+        int ca = tolower((unsigned char)*a);
+        int cb = tolower((unsigned char)*b);
+        if (ca != cb) return ca - cb;
+        a++; b++; n--;
+    }
+    if (n == 0)
+        return 0;
+    return tolower((unsigned char)*a) - tolower((unsigned char)*b);
+}
+
 int compare_values(const ExprValue *a, const ExprValue *b) {
     if (!a || !b) return 0;
 
@@ -207,6 +220,17 @@ int compare_values(const ExprValue *a, const ExprValue *b) {
     if (a->type == VAL_STRING && b->type == VAL_STRING) {
         const char *sa = a->data.sval ? a->data.sval : "";
         const char *sb = b->data.sval ? b->data.sval : "";
+        if (!g_set_exact) {
+            /* SET EXACT OFF (dBase default): compare only up to the
+               length of the shorter string.  Trailing characters are
+               ignored — "ABC" = "ABC123" is .T. */
+            size_t min_len = strlen(sa) < strlen(sb) ? strlen(sa) : strlen(sb);
+            int rc = strncasecmp_portable(sa, sb, min_len);
+            if (rc != 0)
+                return rc;
+            /* The shared prefix is equal — treat as fully equal */
+            return 0;
+        }
         return strcasecmp_portable(sa, sb);
     }
 

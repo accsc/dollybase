@@ -843,8 +843,13 @@ static void skip_block_nested(Token **cur, KeywordId end_kw, KeywordId else_kw)
     int depth = 1;
     while (*cur && (*cur)->type != TOK_EOF) {
         if ((*cur)->type == TOK_KEYWORD) {
+            /* KW_FOR here must be a FOR/ENDFOR loop, NOT the "FOR" in
+               "LOCATE FOR <expr>" or "INDEX ON <expr> TAG <name> FOR <expr>".
+               Heuristic: FOR is a block only when followed by an expression
+               that is eventually terminated by ENDFOR.  We can't easily tell
+               here, so skip treating bare FOR as a nesting keyword and rely
+               on the fact that ENDFOR is not listed among our sentinels. */
             if ((*cur)->keyword_id == KW_IF ||
-                (*cur)->keyword_id == KW_FOR ||
                 ((*cur)->keyword_id == KW_DO && do_is_block(*cur))) {
                 depth++;
             } else if ((*cur)->keyword_id == end_kw ||

@@ -60,13 +60,15 @@ DO WHILE .T.
   IF inputBarcode = "F2" .OR. inputBarcode = "f2"
     IF cART_COUNT > 0
       gPaymentMethod = "CASH"
+      rcpt_total = cART_GRAND_TOTAL
+      rcpt_items = cART_COUNT
       DO sale_record
       CLEAR
       ? "========================================"
       ? "   RECEIPT - Sale " + sale_id
       ? "========================================"
-      ? "Total: " + LTRIM(STR(cART_GRAND_TOTAL, 10, 2))
-      ? "Items: " + LTRIM(STR(cART_COUNT))
+      ? "Total: " + LTRIM(STR(rcpt_total, 10, 2))
+      ? "Items: " + LTRIM(STR(rcpt_items))
       ? "Thank you!"
       ? "========================================"
       WAIT

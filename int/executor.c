@@ -21,6 +21,26 @@
 /* Global SET flags */
 int g_set_century = 1;  /* SET CENTURY ON by default (dBASE convention) */
 
+/* SET ALTERNATE TO / SET CONSOLE state */
+static FILE *g_alternate_file = NULL;   /* SET ALTERNATE TO "file" */
+static int g_set_console = 1;           /* SET CONSOLE ON (default) */
+
+static void alternate_write(const char *s)
+{
+    if (g_alternate_file && s) {
+        fputs(s, g_alternate_file);
+        fflush(g_alternate_file);
+    }
+}
+
+void alternate_close(void)
+{
+    if (g_alternate_file) {
+        fclose(g_alternate_file);
+        g_alternate_file = NULL;
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* Portable case-insensitive string compare                            */
 /* ------------------------------------------------------------------ */
@@ -1270,16 +1290,22 @@ static ExecStatus exec_print(Token **cur)
     *cur = (*cur)->next; /* skip ? or ?? */
 
     int first = 1;
+    char alt_buf[4096] = {0};  /* accumulate alternate output */
     while (*cur && !is_eol_or_eof(*cur)) {
         ExprValue val = parse_expr(cur);
         char *s = val_to_string(&val);
-        if (ui_is_active()) {
-            if (!first) ui_print(" ");
-            ui_print(s);
-        } else {
-            if (!first) printf(" ");
-            printf("%s", s);
+        if (g_set_console) {
+            if (ui_is_active()) {
+                if (!first) ui_print(" ");
+                ui_print(s);
+            } else {
+                if (!first) printf(" ");
+                printf("%s", s);
+            }
         }
+        /* Mirror to alternate file */
+        if (!first) strcat(alt_buf, " ");
+        strcat(alt_buf, s);
         free(s);
         free_value(&val);
         first = 0;
@@ -1293,13 +1319,17 @@ static ExecStatus exec_print(Token **cur)
     }
 
     if (add_newline) {
-        if (ui_is_active()) {
-            ui_print_newline();
-        } else {
-            printf("\n");
-            fflush(stdout);
+        if (g_set_console) {
+            if (ui_is_active()) {
+                ui_print_newline();
+            } else {
+                printf("\n");
+                fflush(stdout);
+            }
         }
+        strcat(alt_buf, "\n");
     }
+    alternate_write(alt_buf);
     ui_refresh();
 
     return EXEC_OK;
@@ -1410,12 +1440,34 @@ static ExecStatus exec_set(Token **cur)
         return EXEC_OK;
     }
 
+    /* Handle SET ALTERNATE TO "file" or SET ALTERNATE TO (close) */
+    if (setting == KW_ALTERNATE) {
+        /* Skip optional "TO" */
+        if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_TO) {
+            *cur = (*cur)->next;
+        }
+        /* Close any existing alternate file */
+        alternate_close();
+        /* Check for a file name */
+        if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_STRING)) {
+            char altfile[1024];
+            strncpy(altfile, (*cur)->value, sizeof(altfile) - 1);
+            altfile[sizeof(altfile) - 1] = '\0';
+            *cur = (*cur)->next;
+            g_alternate_file = fopen(altfile, "a");
+        }
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
     /* Read ON/OFF or TO <value> */
     if (*cur && (*cur)->type == TOK_IDENT) {
         const char *flag = (*cur)->value;
         int on = (port_strcasecmp(flag, "ON") == 0);
         if (setting == KW_CENTURY) {
             g_set_century = on;
+        } else if (setting == KW_CONSOLE) {
+            g_set_console = on;
         }
         (void)on; /* settings not yet wired to config */
         (*cur) = (*cur)->next;

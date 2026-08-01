@@ -28,6 +28,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"ALIAS",        KW_ALIAS},
     {"ALL",          KW_ALL},
     {"ALLTRIM",      KW_ALLTRIM},
+    {"ALTERNATE",    KW_ALTERNATE},
     {"AND",          KW_AND},
     {"APPEND",       KW_APPEND},
     {"ARRAY",        KW_ARRAY},

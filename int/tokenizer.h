@@ -137,6 +137,7 @@ typedef enum {
     /* I/O / system */
     KW_AT_SAY_GET,        /* @...SAY / @...GET (tokenized as one)   */
     KW_COLOR,
+    KW_ALTERNATE,
     KW_CONSOLE,
     KW_DATE_CMD,          /* SET DATE                               */
     KW_CENTURY,

@@ -72,4 +72,10 @@ ExecStatus execute_tokens(Token *tokens);
  */
 ExecStatus execute_file(const char *path);
 
+/**
+ * alternate_close — close the alternate file (SET ALTERNATE TO).
+ * Call on program shutdown.
+ */
+void alternate_close(void);
+
 #endif /* _EXECUTOR_H */

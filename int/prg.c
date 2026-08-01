@@ -165,6 +165,7 @@ int main(int argc, char *argv[])
     { int gc = getch(); (void)gc; }
     ui_shutdown();
 
+    alternate_close();
     wa_shutdown();
     vars_shutdown();
 

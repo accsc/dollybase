@@ -1605,6 +1605,16 @@ static ExecStatus exec_use(Token **cur)
 static ExecStatus exec_close(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "CLOSE" */
+
+    /* Handle CLOSE ALTERNATE */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ALTERNATE) {
+        *cur = (*cur)->next;
+        alternate_close();
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    /* CLOSE ALL / CLOSE DATABASES / CLOSE DATA — close workareas */
     wa_close_all();
     skip_to_eol(cur);
     return EXEC_OK;

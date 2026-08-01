@@ -1461,6 +1461,22 @@ static ExecStatus exec_set(Token **cur)
         return EXEC_OK;
     }
 
+    /* Handle SET ORDER TO <n> */
+    if (setting == KW_SET_ORDER) {
+        /* Skip optional "TO" */
+        if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_TO) {
+            *cur = (*cur)->next;
+        }
+        int order = 0;
+        if (*cur && (*cur)->type == TOK_INTEGER) {
+            order = atoi((*cur)->value);
+            *cur = (*cur)->next;
+        }
+        wa_set_order(order);
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
     /* Read ON/OFF or TO <value> */
     if (*cur && (*cur)->type == TOK_IDENT) {
         const char *flag = (*cur)->value;
@@ -3609,9 +3625,15 @@ static ExecStatus exec_index(Token **cur)
     free(sample_key);
     free_value(&val);
 
-    /* Expect "TO" */
-    if (!*cur || !((*cur)->type == TOK_IDENT &&
-        port_strcasecmp((*cur)->value, "to") == 0)) {
+    /* Expect "TO" — can be TOK_KEYWORD (KW_TO) or TOK_IDENT */
+    int found_to = 0;
+    if (*cur) {
+        if ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_TO)
+            found_to = 1;
+        else if ((*cur)->type == TOK_IDENT && port_strcasecmp((*cur)->value, "to") == 0)
+            found_to = 1;
+    }
+    if (!found_to) {
         fprintf(stderr, "prg: expected TO in INDEX ON\n");
         skip_to_eol(cur);
         return EXEC_OK;

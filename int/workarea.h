@@ -61,6 +61,7 @@ int  wa_alias_to_area(const char *alias); // Resolve "A","B",... or DBF name to 
 /* Index support */
 int  wa_set_index(const char *index_file);  // SET INDEX TO <file>. Returns 0 on success.
 void wa_set_index_clear(void);               // SET INDEX TO (clear).
+void wa_set_order(int order);                // SET ORDER TO n (0 = suspend).
 int  wa_seek(const char *criteria);          // SEEK <expr>. Returns 0 if found.
 int  wa_found(void);                         // FOUND() — 1 if last SEEK/LOCATE succeeded.
 void wa_set_found(int val);                  // Set FOUND() flag manually.

@@ -117,6 +117,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"NEXT",         KW_NEXT},
 
     {"OR",           KW_OR},
+    {"ORDER",        KW_SET_ORDER},
     {"OS",           KW_OS},
     {"OTHERWISE",    KW_OTHERWISE},
     {"PACK",         KW_PACK},

@@ -150,12 +150,20 @@ static DATABASEDBF *areas[MAX_WORK_AREAS];
 static int selected = 0;  // 0-based index
 
 /* Per-work-area index state */
+#define MAX_INDEX_TAGS 10
+
 typedef struct {
     void *handle;     // NTX or NDX* depending on type
     int type;         // 0 = NDX, 1 = NTX, -1 = none
-    int last_found;   // FOUND() state
     int last_page;    // For index-aware skip
     int last_pos;
+} IndexTag;
+
+typedef struct {
+    IndexTag tags[MAX_INDEX_TAGS];
+    int tag_count;    // Number of loaded tags
+    int active_order; // 0 = no index, 1..tag_count = active tag
+    int last_found;   // FOUND() state
 } IndexState;
 
 static IndexState idx_states[MAX_WORK_AREAS];
@@ -184,7 +192,9 @@ void wa_init(void)
     memset(areas, 0, sizeof(areas));
     memset(idx_states, 0, sizeof(idx_states));
     for (int i = 0; i < MAX_WORK_AREAS; i++) {
-        idx_states[i].type = -1;
+        idx_states[i].active_order = 0;
+        for (int j = 0; j < MAX_INDEX_TAGS; j++)
+            idx_states[i].tags[j].type = -1;
         custom_aliases[i] = NULL;
     }
     selected = 0;
@@ -680,35 +690,67 @@ int wa_alias_to_area(const char *alias)
 static void idx_close(void)
 {
     IndexState *st = &idx_states[selected];
-    if (st->type == 1 && st->handle) {
-        /* NTX is returned by value, stored in heap */
-        free(st->handle);
-    } else if (st->type == 0 && st->handle) {
-        /* NDX is allocated via calloc in use_ndx */
-        free(st->handle);
+    for (int i = 0; i < st->tag_count; i++) {
+        IndexTag *tag = &st->tags[i];
+        if (tag->type == 1 && tag->handle) {
+            free(tag->handle);
+        } else if (tag->type == 0 && tag->handle) {
+            free(tag->handle);
+        }
+        tag->handle = NULL;
+        tag->type = -1;
+        tag->last_page = 0;
+        tag->last_pos = 0;
     }
-    st->handle = NULL;
-    st->type = -1;
+    st->tag_count = 0;
+    st->active_order = 0;
     st->last_found = 0;
 }
 
-int wa_set_index(const char *index_file)
+/* Helper: close a single tag at a specific index */
+static void idx_close_tag(IndexState *st, int idx)
+{
+    IndexTag *tag = &st->tags[idx];
+    if (tag->type == 1 && tag->handle) {
+        free(tag->handle);
+    } else if (tag->type == 0 && tag->handle) {
+        free(tag->handle);
+    }
+    tag->handle = NULL;
+    tag->type = -1;
+    tag->last_page = 0;
+    tag->last_pos = 0;
+}
+
+/* Helper: get the active tag pointer, or NULL if order is 0 or invalid */
+static IndexTag *idx_active_tag(IndexState *st)
+{
+    if (st->active_order < 1 || st->active_order > st->tag_count)
+        return NULL;
+    return &st->tags[st->active_order - 1];
+}
+
+/* Internal: load a single index file into the next available tag slot.
+   Returns 0 on success, -1 on failure.  Sets active_order to the new tag. */
+static int idx_load_tag(const char *index_file)
 {
     DATABASEDBF *db = wa_db();
     if (!db) return -1;
 
-    idx_close();
+    IndexState *st = &idx_states[selected];
+    if (st->tag_count >= MAX_INDEX_TAGS)
+        return -1;
 
     char path[1024];
     if (strchr(index_file, '.') == NULL) {
-        // Try .ntx first, then .ndx
         snprintf(path, sizeof(path), "%s.ntx", index_file);
     } else {
         strncpy(path, index_file, sizeof(path) - 1);
         path[sizeof(path) - 1] = '\0';
     }
 
-    IndexState *st = &idx_states[selected];
+    int tag_idx = st->tag_count;
+    IndexTag *tag = &st->tags[tag_idx];
     char *ext = strrchr(path, '.');
 
     if (ext && strcasecmp(ext, ".ntx") == 0) {
@@ -716,12 +758,13 @@ int wa_set_index(const char *index_file)
         if (ntx) {
             *ntx = use_ntx(path);
             if (ntx->type == 0) {
-                /* use_ntx returns type=0 on failure */
                 free(ntx);
                 return -1;
             }
-            st->handle = ntx;
-            st->type = 1;
+            tag->handle = ntx;
+            tag->type = 1;
+            st->tag_count++;
+            st->active_order = tag_idx + 1;
             return 0;
         }
         return -1;
@@ -731,8 +774,10 @@ int wa_set_index(const char *index_file)
         char *path_copy = strdup(path);
         NDX *ndx = use_ndx(path_copy);
         if (ndx) {
-            st->handle = ndx;
-            st->type = 0;
+            tag->handle = ndx;
+            tag->type = 0;
+            st->tag_count++;
+            st->active_order = tag_idx + 1;
             return 0;
         }
         free(path_copy);
@@ -745,8 +790,10 @@ int wa_set_index(const char *index_file)
     if (ntx) {
         *ntx = use_ntx(path);
         if (ntx->type != 0) {
-            st->handle = ntx;
-            st->type = 1;
+            tag->handle = ntx;
+            tag->type = 1;
+            st->tag_count++;
+            st->active_order = tag_idx + 1;
             return 0;
         }
         free(ntx);
@@ -757,8 +804,10 @@ int wa_set_index(const char *index_file)
         char *path_copy = strdup(path);
         NDX *ndx = use_ndx(path_copy);
         if (ndx) {
-            st->handle = ndx;
-            st->type = 0;
+            tag->handle = ndx;
+            tag->type = 0;
+            st->tag_count++;
+            st->active_order = tag_idx + 1;
             return 0;
         }
         free(path_copy);
@@ -767,32 +816,51 @@ int wa_set_index(const char *index_file)
     return -1;
 }
 
+int wa_set_index(const char *index_file)
+{
+    idx_close();  /* Clear all existing tags first */
+    return idx_load_tag(index_file);
+}
+
 void wa_set_index_clear(void)
 {
     idx_close();
 }
 
+void wa_set_order(int order)
+{
+    IndexState *st = &idx_states[selected];
+    if (order == 0) {
+        /* Suspend index use */
+        st->active_order = 0;
+    } else if (order >= 1 && order <= st->tag_count) {
+        st->active_order = order;
+    }
+    /* Silently ignore out-of-range values */
+}
+
 int wa_seek(const char *criteria)
 {
     IndexState *st = &idx_states[selected];
+    IndexTag *tag = idx_active_tag(st);
     DATABASEDBF *db = wa_db();
-    if (!db || !st->handle || st->type < 0) {
+    if (!db || !tag || !tag->handle || tag->type < 0) {
         st->last_found = 0;
         return -1;
     }
 
     FOUND fin;
-    if (st->type == 0) {
-        fin = seek_ndx_btree((NDX *)st->handle, (char *)criteria);
+    if (tag->type == 0) {
+        fin = seek_ndx_btree((NDX *)tag->handle, (char *)criteria);
     } else {
-        fin = seek_ntx_btree((NTX *)st->handle, (char *)criteria);
+        fin = seek_ntx_btree((NTX *)tag->handle, (char *)criteria);
     }
 
     if (fin.recno > 0 && fin.recno <= db->recnos) {
         gotos(wa_db_ptr(), fin.recno);
         st->last_found = 1;
-        st->last_page = fin.page;
-        st->last_pos = fin.pos;
+        tag->last_page = fin.page;
+        tag->last_pos = fin.pos;
         return 0;
     }
 
@@ -814,8 +882,9 @@ void wa_set_found(int val)
 void wa_index_skip(int n)
 {
     IndexState *st = &idx_states[selected];
+    IndexTag *tag = idx_active_tag(st);
     DATABASEDBF *db = wa_db();
-    if (!db || !st->handle || st->type < 0) {
+    if (!db || !tag || !tag->handle || tag->type < 0) {
         wa_skip(n);
         return;
     }
@@ -823,17 +892,17 @@ void wa_index_skip(int n)
     if (n > 0) {
         for (int i = 0; i < n; i++) {
             FOUND fin;
-            if (st->type == 0) {
-                fin = search_ndx_next((NTX *)st->handle, NULL,
-                    st->last_page, st->last_pos);
+            if (tag->type == 0) {
+                fin = search_ndx_next((NTX *)tag->handle, NULL,
+                    tag->last_page, tag->last_pos);
             } else {
-                fin = search_ntx_next((NTX *)st->handle, NULL,
-                    st->last_page, st->last_pos);
+                fin = search_ntx_next((NTX *)tag->handle, NULL,
+                    tag->last_page, tag->last_pos);
             }
             if (fin.recno > 0 && fin.recno <= db->recnos) {
                 gotos(wa_db_ptr(), fin.recno);
-                st->last_page = fin.page;
-                st->last_pos = fin.pos;
+                tag->last_page = fin.page;
+                tag->last_pos = fin.pos;
             } else {
                 break;
             }

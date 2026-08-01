@@ -2143,6 +2143,7 @@ typedef struct {
     char fieldname[256];
     Token *expr_start;
     Token *expr_end; /* exclusive — one past last token of expression */
+    int target_area; /* 0-based area index from alias (e.g. A->FIELD → 0), -1 = current */
 } ReplacePair;
 
 /* Advance scan past one expression, stopping at comma/keyword boundaries.
@@ -2169,12 +2170,21 @@ static Token *skip_expression(Token *scan)
 static void apply_replacements(ReplacePair *pairs, int npairs)
 {
     for (int i = 0; i < npairs; i++) {
+        /* Switch to target area if specified (wa_select wants 1-based) */
+        int saved_area = wa_get_selected();
+        if (pairs[i].target_area >= 0) {
+            wa_select(pairs[i].target_area + 1);
+        }
+
         Token *rcur = pairs[i].expr_start;
         ExprValue val = parse_expr(&rcur);
         char *s = val_to_string(&val);
         wa_replace(pairs[i].fieldname, s);
         free(s);
         free_value(&val);
+
+        /* Restore original area */
+        wa_select(saved_area + 1);
     }
 }
 
@@ -2226,9 +2236,31 @@ static ExecStatus exec_replace(Token **cur)
 
     while (*cur && (*cur)->type == TOK_IDENT && npairs < 64) {
         ReplacePair *p = &pairs[npairs];
-        strncpy(p->fieldname, (*cur)->value, sizeof(p->fieldname) - 1);
-        p->fieldname[sizeof(p->fieldname) - 1] = '\0';
-        *cur = (*cur)->next;
+        p->target_area = -1; /* default: current area */
+
+        /* Check for alias->field: A->FIELD WITH expr */
+        Token *saved = (*cur)->next;
+        if (saved && saved->type == TOK_ARROW) {
+            /* Resolve alias */
+            p->target_area = wa_alias_to_area((*cur)->value);
+            if (p->target_area < 0)
+                p->target_area = wa_get_selected();
+            *cur = saved->next; /* skip -> */
+            /* Field name can be TOK_IDENT or TOK_KEYWORD */
+            if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_KEYWORD)) {
+                strncpy(p->fieldname, (*cur)->value, sizeof(p->fieldname) - 1);
+                p->fieldname[sizeof(p->fieldname) - 1] = '\0';
+                *cur = (*cur)->next;
+            } else {
+                /* Not a valid field after ->, skip and break */
+                npairs--;
+                break;
+            }
+        } else {
+            strncpy(p->fieldname, (*cur)->value, sizeof(p->fieldname) - 1);
+            p->fieldname[sizeof(p->fieldname) - 1] = '\0';
+            *cur = (*cur)->next;
+        }
 
         /* Skip "WITH" keyword */
         if (*cur && (*cur)->type == TOK_KEYWORD &&

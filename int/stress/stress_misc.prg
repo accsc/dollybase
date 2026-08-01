@@ -9,10 +9,10 @@ fail = 0
 * OS()
 * -----------------------------------------------------------
 ? "=== OS() ==="
-os = OS()
-if LEN(os) > 0
+os1 = OS()
+if LEN(os1) > 0
     pass = pass + 1
-    ? "PASS: OS() = '" + os + "'"
+    ? "PASS: OS() = '" + os1 + "'"
 else
     fail = fail + 1
     ? "FAIL: OS() returned empty string"
@@ -85,14 +85,14 @@ else
     ? "FAIL: TYPE('doesNotExist') expected 'U', got '" + t + "'"
 endif
 
-* TYPE() with direct value (fallback)
+* TYPE() with nonexistent variable name returns "U"
 t = TYPE("hello")
-if t = "C"
+if t = "U"
     pass = pass + 1
-    ? "PASS: TYPE('hello' literal) = 'C'"
+    ? "PASS: TYPE('hello') = 'U' (no variable named hello)"
 else
     fail = fail + 1
-    ? "FAIL: TYPE('hello') expected 'C', got '" + t + "'"
+    ? "FAIL: TYPE('hello') expected 'U', got '" + t + "'"
 endif
 
 * -----------------------------------------------------------

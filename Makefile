@@ -44,7 +44,8 @@ LIB_STATIC = $(LIBDIR)/.libs/libdbase_0.4_s.a
 # Interpreter sources
 INT_SRCS = $(INTDIR)/prg.c $(INTDIR)/tokenizer.c $(INTDIR)/parser.c \
            $(INTDIR)/executor.c $(INTDIR)/exprvalue.c $(INTDIR)/variables.c \
-           $(INTDIR)/workarea.c $(INTDIR)/ui.c $(INTDIR)/create_ui.c
+           $(INTDIR)/workarea.c $(INTDIR)/ui.c $(INTDIR)/create_ui.c \
+           $(INTDIR)/memfile.c
 
 INT_OBJS = $(patsubst %.c,%.o,$(INT_SRCS))
 

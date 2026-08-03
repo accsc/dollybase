@@ -212,6 +212,11 @@ typedef enum {
     KW_TO,
     KW_VAL,
     KW_YEAR,
+    KW_SAVE,
+    KW_RESTORE,
+    KW_ADDITIVE,
+    KW_EXCEPT,
+    KW_LIKE,
 
     /* SET command keyword */
     KW_SET,

@@ -17,6 +17,7 @@
 #include "exprvalue.h"
 #include "workarea.h"
 #include "ui.h"
+#include "memfile.h"
 
 /* Global SET flags */
 int g_set_century = 1;  /* SET CENTURY ON by default (dBASE convention) */
@@ -233,6 +234,8 @@ static ExecStatus exec_clear_all(Token **cur);
 static ExecStatus exec_clear_memory(Token **cur);
 static ExecStatus exec_text(Token **cur);
 static ExecStatus exec_create(Token **cur);
+static ExecStatus exec_save(Token **cur);
+static ExecStatus exec_restore(Token **cur);
 
 /* Block / loop helpers */
 static ExecStatus exec_block_until(Token **cur, KeywordId kw1, KeywordId kw2);
@@ -421,6 +424,8 @@ static ExecStatus exec_statement(Token **cur)
             case KW_CLEAR_MEMORY:   return exec_clear_memory(cur);
             case KW_TEXT:           return exec_text(cur);
             case KW_BROWSE:   return exec_browse(cur);
+            case KW_SAVE:     return exec_save(cur);
+            case KW_RESTORE:  return exec_restore(cur);
             default:
                 /* Unknown keyword — treat as expression or skip */
                 break;
@@ -3960,6 +3965,244 @@ static ExecStatus exec_create(Token **cur)
     } else {
         ui_print("CREATE requires interactive mode");
     }
+
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* Wildcard pattern matching (LIKE / EXCEPT)                           */
+/* ------------------------------------------------------------------ */
+
+/* Simple wildcard match: '*' matches any sequence, '?' matches any single char.
+   Case-insensitive. Returns 1 if matches, 0 otherwise. */
+static int wildcard_match(const char *pattern, const char *str)
+{
+    const char *p = pattern;
+    const char *s = str;
+
+    while (*s) {
+        if (*p == '*') {
+            /* Skip consecutive '*' */
+            while (*p == '*') p++;
+            if (*p == '\0') return 1; /* '*' at end matches everything */
+            /* Try matching the rest of pattern at every position */
+            for (const char *sp = s; *sp; sp++) {
+                if (wildcard_match(p, sp)) return 1;
+            }
+            /* Also try matching from end of string */
+            return wildcard_match(p, "");
+        }
+        if (*p == '?') {
+            p++; s++;
+            continue;
+        }
+        if (tolower((unsigned char)*p) != tolower((unsigned char)*s)) {
+            return 0;
+        }
+        p++; s++;
+    }
+
+    /* Skip trailing '*' in pattern */
+    while (*p == '*') p++;
+    return (*p == '\0');
+}
+
+/* Check if a variable name matches the SAVE TO filter criteria.
+   like_pattern: NULL means no LIKE filter (match all)
+   except_pattern: NULL means no EXCEPT filter
+   Returns 1 if the variable should be included. */
+static int var_matches_filter(const char *name, const char *like_pattern, const char *except_pattern)
+{
+    /* LIKE filter: only include if name matches */
+    if (like_pattern && !wildcard_match(like_pattern, name))
+        return 0;
+
+    /* EXCEPT filter: exclude if name matches */
+    if (except_pattern && wildcard_match(except_pattern, name))
+        return 0;
+
+    return 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* SAVE TO                                                             */
+/* ------------------------------------------------------------------ */
+/*
+ * Syntax:
+ *   SAVE TO <file> [ALL [LIKE <pattern>] [EXCEPT <pattern>]] [<var1>, <var2>, ...]
+ */
+
+static ExecStatus exec_save(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "SAVE" */
+
+    /* Expect "TO" */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_TO) {
+        *cur = (*cur)->next;
+    }
+
+    /* Get filename */
+    if (!*cur || is_eol_or_eof(*cur)) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    char filename[512];
+    if ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_STRING) {
+        strncpy(filename, (*cur)->value, sizeof(filename) - 1);
+        filename[sizeof(filename) - 1] = '\0';
+        *cur = (*cur)->next;
+    } else {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    /* Add .mem extension if not present */
+    {
+        size_t len = strlen(filename);
+        if (len < 4 || strcasecmp(filename + len - 4, ".mem") != 0) {
+            strncat(filename, ".mem", sizeof(filename) - strlen(filename) - 1);
+        }
+    }
+
+    /* Parse optional: ALL [LIKE <pattern>] [EXCEPT <pattern>] or variable list */
+    int is_all = 0;
+    char like_pattern[256] = "";
+    char except_pattern[256] = "";
+    char *var_names[256];
+    int var_count = 0;
+
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ALL) {
+        is_all = 1;
+        *cur = (*cur)->next;
+
+        /* Optional LIKE <pattern> */
+        if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_LIKE) {
+            *cur = (*cur)->next;
+            if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_STRING)) {
+                strncpy(like_pattern, (*cur)->value, sizeof(like_pattern) - 1);
+                like_pattern[sizeof(like_pattern) - 1] = '\0';
+                *cur = (*cur)->next;
+            }
+        }
+
+        /* Optional EXCEPT <pattern> */
+        if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_EXCEPT) {
+            *cur = (*cur)->next;
+            if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_STRING)) {
+                strncpy(except_pattern, (*cur)->value, sizeof(except_pattern) - 1);
+                except_pattern[sizeof(except_pattern) - 1] = '\0';
+                *cur = (*cur)->next;
+            }
+        }
+    } else {
+        /* Variable name list */
+        while (*cur && !is_eol_or_eof(*cur)) {
+            if ((*cur)->type == TOK_IDENT) {
+                var_names[var_count++] = strdup((*cur)->value);
+                *cur = (*cur)->next;
+            } else {
+                break;
+            }
+            /* Skip comma */
+            if (*cur && (*cur)->type == TOK_COMMA) {
+                *cur = (*cur)->next;
+            }
+        }
+    }
+
+    skip_to_eol(cur);
+
+    /* Perform the save */
+    if (is_all) {
+        /* Filter variables by LIKE/EXCEPT patterns */
+        int total = vars_count();
+        char *filtered[256];
+        int filtered_count = 0;
+
+        for (int i = 0; i < total && filtered_count < 256; i++) {
+            const char *name;
+            ExprValue val;
+            if (!vars_get_by_index(i, &name, &val))
+                continue;
+            if (var_matches_filter(name, like_pattern[0] ? like_pattern : NULL,
+                                   except_pattern[0] ? except_pattern : NULL)) {
+                filtered[filtered_count++] = strdup(name);
+            }
+            free_value(&val);
+        }
+
+        memfile_save(filename,
+                     filtered_count > 0 ? (const char **)filtered : NULL,
+                     filtered_count);
+
+        for (int i = 0; i < filtered_count; i++)
+            free(filtered[i]);
+    } else if (var_count > 0) {
+        memfile_save(filename, (const char **)var_names, var_count);
+        for (int i = 0; i < var_count; i++)
+            free(var_names[i]);
+    } else {
+        /* SAVE TO file with no vars and no ALL = save all variables */
+        memfile_save(filename, NULL, 0);
+    }
+
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* RESTORE FROM                                                        */
+/* ------------------------------------------------------------------ */
+/*
+ * Syntax:
+ *   RESTORE FROM <file> [ADDITIVE]
+ */
+
+static ExecStatus exec_restore(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "RESTORE" */
+
+    /* Expect "FROM" — but FROM might not be a keyword, so accept any ident "from" */
+    if (*cur && (*cur)->type == TOK_IDENT &&
+        port_strcasecmp((*cur)->value, "from") == 0) {
+        *cur = (*cur)->next;
+    }
+
+    /* Get filename */
+    if (!*cur || is_eol_or_eof(*cur)) {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    char filename[512];
+    if ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_STRING) {
+        strncpy(filename, (*cur)->value, sizeof(filename) - 1);
+        filename[sizeof(filename) - 1] = '\0';
+        *cur = (*cur)->next;
+    } else {
+        skip_to_eol(cur);
+        return EXEC_OK;
+    }
+
+    /* Add .mem extension if not present */
+    {
+        size_t len = strlen(filename);
+        if (len < 4 || strcasecmp(filename + len - 4, ".mem") != 0) {
+            strncat(filename, ".mem", sizeof(filename) - strlen(filename) - 1);
+        }
+    }
+
+    /* Check for ADDITIVE */
+    int additive = 0;
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_ADDITIVE) {
+        additive = 1;
+        *cur = (*cur)->next;
+    }
+
+    skip_to_eol(cur);
+
+    /* Perform the restore */
+    memfile_restore(filename, additive);
 
     return EXEC_OK;
 }

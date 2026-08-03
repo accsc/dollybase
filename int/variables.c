@@ -95,3 +95,31 @@ int vars_exists(const char *name)
 {
     return find_index(name) >= 0;
 }
+
+int vars_count(void)
+{
+    return count;
+}
+
+int vars_get_by_index(int i, const char **out_name, ExprValue *out_value)
+{
+    if (i < 0 || i >= count)
+        return 0;
+    *out_name = store[i].name;
+    *out_value = copy_value(&store[i].value);
+    return 1;
+}
+
+int vars_delete(const char *name)
+{
+    int idx = find_index(name);
+    if (idx < 0)
+        return 0;
+    free_value(&store[idx].value);
+    /* Shift remaining elements down */
+    for (int j = idx; j < count - 1; j++) {
+        store[j] = store[j + 1];
+    }
+    count--;
+    return 1;
+}

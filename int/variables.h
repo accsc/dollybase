@@ -40,4 +40,22 @@ ExprValue vars_get(const char *name);
  */
 int vars_exists(const char *name);
 
+/**
+ * vars_count — return the number of variables in the store.
+ */
+int vars_count(void);
+
+/**
+ * vars_get_by_index — retrieve the name and value of the variable at index i.
+ * Returns 1 if successful, 0 if i is out of range.
+ * The returned name pointer is valid until the next vars mutation.
+ * The returned value is a deep copy that the caller must free.
+ */
+int vars_get_by_index(int i, const char **out_name, ExprValue *out_value);
+
+/**
+ * vars_delete — remove a variable by name. Returns 1 if found and removed.
+ */
+int vars_delete(const char *name);
+
 #endif /* _VARIABLES_H */

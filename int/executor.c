@@ -1460,6 +1460,14 @@ static ExecStatus exec_set(Token **cur)
             strncpy(altfile, (*cur)->value, sizeof(altfile) - 1);
             altfile[sizeof(altfile) - 1] = '\0';
             *cur = (*cur)->next;
+            /* The tokenizer skips '.' between identifier parts, so if the
+               next token is also an identifier (or keyword used as filename),
+               it's the extension part (e.g. "alt_test.log" → "alt_test" + "log"). */
+            if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_KEYWORD)) {
+                strncat(altfile, ".", sizeof(altfile) - strlen(altfile) - 1);
+                strncat(altfile, (*cur)->value, sizeof(altfile) - strlen(altfile) - 1);
+                *cur = (*cur)->next;
+            }
             g_alternate_file = fopen(altfile, "a");
         }
         skip_to_eol(cur);

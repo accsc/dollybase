@@ -136,6 +136,7 @@ char *dbt_name = (char *) malloc(1025);
 FILE *a;
 int i,pos;
 char *presion2;
+char *presion2_memo = NULL;
 	int buf_size = (asp && number >= 1 && number <= 128 && asp->fields.tipos[number] == 'M') ? 1024 : 256;
 
 if( dbt_name == NULL)
@@ -148,13 +149,13 @@ if( (presion2 = (char *) malloc(buf_size + 1)) ==NULL)
 	free(dbt_name);
 	fprintf(stderr,"Error. Sin memoria.\n");
 	fflush(stderr);
-	strcpy(*presion,NULL);
+	*presion = NULL;
 	return;
 }
 
 if( (a = fopen(asp->name,"rb")) == NULL)
 {
-	strcpy(*presion,NULL);
+	*presion = NULL;
 	free(presion2);
 	free(dbt_name);
 	return;
@@ -177,8 +178,11 @@ if( asp->fields.tipos[number] == 'M')
 {
 	get_dbt(asp->name,dbt_name);
 	if( asp->tipo == 3)
-	    get_memo_field(dbt_name,atoi(presion2),&presion2,1023);
-	else if(asp->tipo == 4)
+	{
+	    get_memo_field(dbt_name,atoi(presion2),&presion2_memo,1023);
+	    free(presion2);
+	    presion2 = presion2_memo;
+	}else if(asp->tipo == 4)
 	    get_db4_memo_block(dbt_name,atoi(presion2),presion2,1023);
 }
 
@@ -233,6 +237,13 @@ x = field_to_number(asp,campo);
 	fprintf(stderr,"Header len: %i\n",asp->header_len);
 	fflush(stderr);
 #endif
+if (x <= 0)
+{
+  fprintf(stderr,"Invalid field name\n");
+  fclose(a);
+  return -1;
+}
+
 
 if( asp->fields.tipos[x] == 'M')
 {
@@ -275,6 +286,7 @@ if( asp->fields.tipos[x] == 'M')
 		if( new_block <= 0)
 		{
 			free(memo_name);
+			free(me);
 			fclose(a);
 			return -1;
 		}
@@ -282,6 +294,7 @@ if( asp->fields.tipos[x] == 'M')
 		if( add_to_dbt(memo_name, rerum, strlen(rerum)) != 0)
 		{
 			free(memo_name);
+			free(me);
 			fclose(a);
 			return -1;
 		}
@@ -469,7 +482,7 @@ int get_memo_field(char *_na, int block, char **result, int max)
 	return -1;
 	}
 
-	if( (result2 = (char *) malloc ( max)) == NULL)
+	if( (result2 = (char *) malloc ( max+1)) == NULL)
 	{
 		free(dbt_block);
 		return -1;
@@ -686,13 +699,13 @@ if( (presion2 = (char *) malloc(257)) ==NULL)
 	free(dbt_name);
 	fprintf(stderr,"Error. Sin memoria.\n");
 	fflush(stderr);
-	strcpy(*presion,NULL);
+	*presion = NULL;
 	return;
 }
 
 if( (a = fopen(asp->name,"rb")) == NULL)
 {
-	strcpy(*presion,NULL);
+	*presion = NULL;
 	free(presion2);
 	free(dbt_name);
 	return;
@@ -749,6 +762,12 @@ x = field_to_number(asp,campo);
 	fprintf(stderr,"Header len: %i\n",asp->header_len);
 	fflush(stderr);
 #endif
+if (x <= 0)
+{
+  fprintf(stderr,"Invalid field name\n");
+  fclose(a);
+  return -1;
+}
 
 pos = ((asp->current-1)*asp->rec_len) + asp->header_len;
 

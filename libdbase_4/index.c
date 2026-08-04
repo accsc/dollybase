@@ -19,6 +19,40 @@
 #include <sys/stat.h>
 #include "libdbase.h"
 
+int search(char *str, char *cri, int mode)
+{
+        int ssize,csize,i;
+        ssize = strlen(str);
+        csize = strlen(cri);
+        if( mode > 3 || mode <0)
+        return -1;
+        if( ssize < csize)
+        return -1;
+        if( csize <= 0 || ssize <= 0)
+        return -1;
+
+        for( i = 0; i<= (ssize-csize); ++i)
+        {
+                if( mode == 0)
+                {
+                        if( strncmp( str+i,cri,csize) == 0 )
+                        return 0;
+                }else if( mode == 1){
+                        if( strncasecmp( str+i,cri,csize) == 0)
+                                return 0;
+                }else if( mode == 2){
+                        if( strncmp( str+i,cri,csize) == 0  && ( *(str+i+csize) == ' ' || *(str+i+csize) == '\0' || *(str+i+csize) == '\t' || *(str+i+csize) == '\n') )
+                        return 0;
+                }else if( mode == 3){
+                        if( strncasecmp( str+i,cri,csize) == 0 && ( *(str+i+csize) == ' ' || *(str+i+csize) == '\0' || *(str+i+csize) == '\t' || *(str+i+csize) == '\n') )
+                        return 0;
+                }
+
+        }
+return -1;
+}
+
+
 /********************************************************************
 *  								    *
 * The anchor node of the index file. Its better in memory... faster *
@@ -167,6 +201,8 @@ FOUND search_ntx_next(NTX *ind, char *criteria, int last_page, int last_pos)
 		fprintf(stderr,"NTX: Error, not enought memory\n");
 		fflush(stderr);
 #endif
+		free(page);
+		free(rec_conx);
 		return results;
 	}
 	if ( (indic = fopen(ind->fname,"rb")) == NULL)
@@ -175,6 +211,8 @@ FOUND search_ntx_next(NTX *ind, char *criteria, int last_page, int last_pos)
 		fprintf(stderr,"NTX: Cant open index file\n");
 		fflush(stderr);
 #endif
+                free(page);
+		free(rec_conx);
 		return results;
 	}
 	fseek(indic,(last_page)*1024,SEEK_SET);
@@ -221,6 +259,8 @@ FOUND search_ntx_next(NTX *ind, char *criteria, int last_page, int last_pos)
 		fprintf(stderr,"NTX: Error not enought memory\n");
 		fflush(stderr);
 #endif
+                free(page);
+                free(rec_conx);
 		return results;
 	}
 	for( i = 0; i< (ind->max_keys_per_page*2); ++i)
@@ -415,6 +455,8 @@ FOUND search_ndx_next(NTX *ind, char *criteria, int last_page, int last_pos)
 		fprintf(stderr,"NDX: Not enoguth memory\n");
 		fflush(stderr);
 #endif
+                free(head);
+                free(rec_conx);
 		return fin;
 	}
 	if( (indic = fopen(ind->fname,"rb")) == NULL)
@@ -424,6 +466,7 @@ FOUND search_ndx_next(NTX *ind, char *criteria, int last_page, int last_pos)
 		fflush(stderr);
 #endif
 		free(head);
+		free(rec_conx);
 		return fin;
 	}
 
@@ -467,6 +510,7 @@ FOUND search_ndx_next(NTX *ind, char *criteria, int last_page, int last_pos)
 			else
 				fin.recno = dbfrec;
 			free(head);
+			free(rec_conx);
 			fclose(indic);
 			return fin;
 		}
@@ -479,6 +523,7 @@ FOUND search_ndx_next(NTX *ind, char *criteria, int last_page, int last_pos)
 			else
 			fin.recno = dbfrec;
 			free(head);
+			free(rec_conx);
 			fclose(indic);
 			return fin;
 		}
@@ -487,6 +532,7 @@ FOUND search_ndx_next(NTX *ind, char *criteria, int last_page, int last_pos)
 	
 
 	free(head);
+	free(rec_conx);
 	fclose(indic);
 	return fin;
 }

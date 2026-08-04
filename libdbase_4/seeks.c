@@ -139,6 +139,16 @@ FOUND seek_ndx_btree(NDX *ind, char *criteria)
         if (nentry <= 0) break;
 
         int found_entry = -1;
+        int child_page = 0;  /* child page to descend to */
+
+        /* Pre-read first entry's child pointer for interior nodes.
+           In NDX B-trees, the first child always contains keys < first separator.
+           If criteria < first key, we need this pointer. */
+        {
+            int base = 4;
+            child_page = page[base] + (page[base+1] << 8) +
+                         (page[base+2] << 16) + (page[base+3] << 24);
+        }
 
         for (int i = 0; i < nentry; i++) {
             int base = 4 + i * (ind->key_len + 8);
@@ -159,7 +169,8 @@ FOUND seek_ndx_btree(NDX *ind, char *criteria)
             while (klen > 0 && keybuf[klen - 1] == ' ')
                 keybuf[--klen] = '\0';
 
-            int cmp = strncasecmp(keybuf, criteria, (size_t)klen > strlen(criteria) ? strlen(criteria) : klen);
+            size_t cmplen = (size_t)klen > strlen(criteria) ? strlen(criteria) : klen;
+            int cmp = strncasecmp(keybuf, criteria, cmplen);
 
             if (cmp == 0) {
                 /* Exact match */
@@ -179,7 +190,6 @@ FOUND seek_ndx_btree(NDX *ind, char *criteria)
                 }
             } else if (cmp < 0) {
                 /* Key < criteria — criteria could be in this child's range */
-                /* Remember this entry as a candidate and keep looking */
                 if (leafnode != 0 && dbfrec == 0) {
                     page_num = leafnode;
                     found_entry = i;
@@ -189,7 +199,20 @@ FOUND seek_ndx_btree(NDX *ind, char *criteria)
                     found_entry = -2; /* marker: still scanning leaf */
                 }
             } else {
-                /* Key > criteria — stop; last candidate is our target */
+                /* Key > criteria — stop */
+                if (i == 0 && leafnode != 0 && dbfrec == 0) {
+                    /* criteria < first key in interior node —
+                       descend to first child */
+                    page_num = child_page;
+                    found_entry = 0;
+                } else if (found_entry >= 0) {
+                    /* Already saved a candidate child from previous iteration */
+                    /* page_num already set */
+                } else if (found_entry == -2) {
+                    /* Was scanning leaf entries — criteria exceeds all keys */
+                    /* keep found_entry = -2 */
+                }
+                /* else: first entry in leaf > criteria — not found */
                 break;
             }
         }

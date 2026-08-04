@@ -1552,8 +1552,10 @@ static ExecStatus exec_set(Token **cur)
     /* Handle SET INDEX TO <file> */
     if (setting == KW_INDEX || setting == KW_SET_INDEX) {
         /* Skip optional "TO" */
-        if (*cur && (*cur)->type == TOK_IDENT &&
-            port_strcasecmp((*cur)->value, "to") == 0) {
+        if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_TO) {
+            *cur = (*cur)->next;
+        } else if (*cur && (*cur)->type == TOK_IDENT &&
+                   port_strcasecmp((*cur)->value, "to") == 0) {
             *cur = (*cur)->next;
         }
         if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_STRING)) {
@@ -1561,6 +1563,12 @@ static ExecStatus exec_set(Token **cur)
             strncpy(idxfile, (*cur)->value, sizeof(idxfile) - 1);
             idxfile[sizeof(idxfile) - 1] = '\0';
             *cur = (*cur)->next;
+            /* Handle dot-skipping: tokenizer splits "TRIPS.NDX" into "trips" + "ndx" */
+            if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_KEYWORD)) {
+                strncat(idxfile, ".", sizeof(idxfile) - strlen(idxfile) - 1);
+                strncat(idxfile, (*cur)->value, sizeof(idxfile) - strlen(idxfile) - 1);
+                *cur = (*cur)->next;
+            }
             /* Resolve case-insensitively */
             {
                 char req[1024];

@@ -183,9 +183,10 @@ int memfile_save(const char *path, const char **names, int name_count)
             int year, month, day;
             double jd;
             if (parse_ymd(val.data.dval, &year, &month, &day)) {
-                /* Expand 2-digit years: 0-99 → 1900-1999 */
+                /* Expand 2-digit years using pivot at 50:
+                   00-49 → 2000-2049,  50-99 → 1950-1999 */
                 if (year < 100)
-                    year += 1900;
+                    year = year < 50 ? 2000 + year : 1900 + year;
                 jd = date_to_julian(year, month, day);
             } else {
                 jd = 0.0;

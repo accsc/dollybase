@@ -291,7 +291,7 @@ int wa_use(const char *filename, int area, const char *alias)
     // without touching *asp, leaving our malloc'd block untouched.
     // We detect failure by checking if name[0] is still '\0'.
     if (db->name[0] == '\0' || db->tipo == 0) {
-        fprintf(stderr, "prg: cannot open '%s'\n", path);
+        fprintf(stderr, "prg: cannot open '%s': No such file or directory\n", path);
         free(db);
         return -1;
     }

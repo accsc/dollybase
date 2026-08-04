@@ -120,8 +120,10 @@ static int decode_logical_byte(unsigned char b)
 int memfile_save(const char *path, const char **names, int name_count)
 {
     FILE *f = fopen(path, "wb");
-    if (!f)
+    if (!f) {
+        fprintf(stderr, "prg: cannot open '%s': %m\n", path);
         return -1;
+    }
 
     int total = vars_count();
     int saved = 0;
@@ -244,8 +246,10 @@ int memfile_save(const char *path, const char **names, int name_count)
 int memfile_restore(const char *path, int additive)
 {
     FILE *f = fopen(path, "rb");
-    if (!f)
+    if (!f) {
+        fprintf(stderr, "prg: cannot open '%s': %m\n", path);
         return -1;
+    }
 
     if (!additive) {
         vars_shutdown();

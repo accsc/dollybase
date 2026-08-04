@@ -103,7 +103,7 @@ static int resolve_file_path(const char *requested, char *out, size_t out_size)
 
     /* Scan directory for matches */
     struct dirent *entry;
-    char *matches[64];
+    char matches[64][256];
     int match_count = 0;
 
     while ((entry = readdir(dir)) != NULL) {
@@ -135,7 +135,9 @@ static int resolve_file_path(const char *requested, char *out, size_t out_size)
         }
 
         if (match_count < 64) {
-            matches[match_count++] = entry->d_name;
+            strncpy(matches[match_count], entry->d_name, 255);
+            matches[match_count][255] = '\0';
+            match_count++;
         }
     }
     closedir(dir);
@@ -767,7 +769,7 @@ static ExecStatus exec_do_call(Token **cur)
 
     if (!source || !*source) {
         free(source);
-        fprintf(stderr, "prg: cannot open '%s'\n", path);
+        fprintf(stderr, "prg: cannot open '%s': %m\n", path);
         /* Resume at return point */
         *cur = return_point;
         return EXEC_OK;
@@ -4372,19 +4374,25 @@ static ExecStatus exec_save(Token **cur)
             free_value(&val);
         }
 
-        memfile_save(filename,
+        if (memfile_save(filename,
                      filtered_count > 0 ? (const char **)filtered : NULL,
-                     filtered_count);
+                     filtered_count) < 0) {
+            fprintf(stderr, "prg: SAVE TO '%s' failed\n", filename);
+        }
 
         for (int i = 0; i < filtered_count; i++)
             free(filtered[i]);
     } else if (var_count > 0) {
-        memfile_save(filename, (const char **)var_names, var_count);
+        if (memfile_save(filename, (const char **)var_names, var_count) < 0) {
+            fprintf(stderr, "prg: SAVE TO '%s' failed\n", filename);
+        }
         for (int i = 0; i < var_count; i++)
             free(var_names[i]);
     } else {
         /* SAVE TO file with no vars and no ALL = save all variables */
-        memfile_save(filename, NULL, 0);
+        if (memfile_save(filename, NULL, 0) < 0) {
+            fprintf(stderr, "prg: SAVE TO '%s' failed\n", filename);
+        }
     }
 
     return EXEC_OK;
@@ -4424,6 +4432,14 @@ static ExecStatus exec_restore(Token **cur)
         return EXEC_OK;
     }
 
+    /* Handle dot-skipping: tokenizer splits "CHKBOOK.MEM" into "chkbook" + "mem" */
+    if (*cur && ((*cur)->type == TOK_IDENT ||
+        ((*cur)->type == TOK_KEYWORD && (*cur)->keyword_id != KW_ADDITIVE))) {
+        strncat(filename, ".", sizeof(filename) - strlen(filename) - 1);
+        strncat(filename, (*cur)->value, sizeof(filename) - strlen(filename) - 1);
+        *cur = (*cur)->next;
+    }
+
     /* Add .mem extension if not present */
     {
         size_t len = strlen(filename);
@@ -4450,7 +4466,12 @@ static ExecStatus exec_restore(Token **cur)
     skip_to_eol(cur);
 
     /* Perform the restore */
-    memfile_restore(filename, additive);
+    {
+        int rc = memfile_restore(filename, additive);
+        if (rc < 0) {
+            fprintf(stderr, "prg: RESTORE FROM '%s' failed\n", filename);
+        }
+    }
 
     return EXEC_OK;
 }

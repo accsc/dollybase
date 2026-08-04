@@ -148,6 +148,17 @@ static int resolve_file_path(const char *requested, char *out, size_t out_size)
         return 1;
     }
 
+    /* When no extension specified and multiple matches, prefer .dbf */
+    if (match_count > 1 && req_ext[0] == '\0') {
+        for (int i = 0; i < match_count && i < 64; i++) {
+            if (strcasestr(matches[i], ".dbf")) {
+                strncpy(out, matches[i], out_size - 1);
+                out[out_size - 1] = '\0';
+                return 1;
+            }
+        }
+    }
+
     if (match_count > 1) {
         fprintf(stderr, "prg: ambiguous file '%s' (found %d matches):\n", requested, match_count);
         for (int i = 0; i < match_count && i < 64; i++) {

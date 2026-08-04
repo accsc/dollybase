@@ -197,8 +197,8 @@ static Token *make_token(TokenType type, const char *value, int line)
         return NULL;
     tok->type = type;
     tok->keyword_id = KW_NONE;
-    strncpy(tok->value, value, 254);
-    tok->value[254] = '\0';
+    strncpy(tok->value, value, 2046);
+    tok->value[2046] = '\0';
     tok->line = line;
     tok->next = NULL;
     return tok;
@@ -312,7 +312,7 @@ static void scan_string_literal(const char **pos, Token **out, int line)
     /* pos points at opening '"' */
     (*pos)++;  /* skip opening quote */
 
-    char buf[256];
+    char buf[2048];
     size_t j = 0;
 
     while (**pos) {
@@ -331,7 +331,7 @@ static void scan_string_literal(const char **pos, Token **out, int line)
             buf[j++] = **pos;
             (*pos)++;
         }
-        if (j >= 254)
+        if (j >= 2046)
             break;
     }
     buf[j] = '\0';

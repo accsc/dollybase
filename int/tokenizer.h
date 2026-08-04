@@ -230,7 +230,7 @@ typedef enum {
 typedef struct Token {
     TokenType type;
     KeywordId keyword_id;   /* Valid only when type == TOK_KEYWORD  */
-    char value[256];        /* Token text (always null-terminated)  */
+    char value[2048];       /* Token text (always null-terminated)  */
     int line;               /* Source line number (1-indexed)       */
     struct Token *next;     /* Linked list forward pointer          */
 } Token;

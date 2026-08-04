@@ -1,16 +1,15 @@
 /*
  * memfile.h — dBase III .MEM file I/O for SAVE TO / RESTORE FROM
  *
- * Format (per-variable record, 32 bytes fixed + variable-length value):
- *   Offset 0-9:   Variable name (10 bytes, null-padded, uppercase)
- *   Offset 10:    Type (0=C, 1=N, 2=L, 3=D)
- *   Offset 11:    Flag byte (0xce for N/L/D, 0xc3 for C)
- *   Offset 12-13: Value data length (LE, excludes header)
- *   Offset 14-15: File magic (LE, 0xd647)
- *   Offset 16+:   Value data (variable length, null-terminated)
+ * Format (32-byte header per variable, followed by payload):
+ *   Offset 0x00-0x0A (11 bytes): Variable name, ASCII, NUL-padded
+ *   Offset 0x0B (1 byte):        Type byte (0xC3 = character, 0xCE = numeric)
+ *   Offset 0x0C-0x0F (4 bytes):  Record ID / serial number (little-endian)
+ *   Offset 0x10-0x11 (2 bytes):  Character: payload length | Numeric: width + decimals
+ *   Offset 0x12-0x1F (14 bytes): Reserved (usually zero)
+ *   Offset 0x20+:                Payload (char: <len> bytes | numeric: 8-byte double LE)
  *
- * File ends with 0x1a (SUB/EOF marker).
- * No file header (MVAR) is written — matches CHKBOOK.MEM format.
+ * File ends with 0x1A (DOS EOF marker).
  */
 
 #ifndef _MEMFILE_H

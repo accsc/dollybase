@@ -1,133 +1,57 @@
 /*
  * memfile.c — dBase III .MEM file I/O for SAVE TO / RESTORE FROM
  *
- * Writes and reads the dBase III PLUS memory variable file format.
- * Each variable is stored as a fixed 16-byte header + variable-length value data.
- * The file ends with a 0x1a (SUB) EOF marker.
+ * Format (32-byte header per variable, followed by payload):
+ *   Offset 0x00-0x0A (11 bytes): Variable name, ASCII, NUL-padded
+ *   Offset 0x0B (1 byte):        Type byte (0xC3 = character, 0xCE = numeric)
+ *   Offset 0x0C-0x0F (4 bytes):  Record ID / serial number (little-endian)
+ *                                 FoxBase+ uses 0x66CA in upper bytes,
+ *                                 dBase III uses 0x47D6 in upper bytes
+ *   Offset 0x10-0x11 (2 bytes):  Meaning depends on type:
+ *                                 Character: payload length (uint16 LE)
+ *                                 Numeric:   width (byte[0x10]) + decimals (byte[0x11])
+ *   Offset 0x12-0x1F (14 bytes): Reserved (usually zero)
+ *   Offset 0x20+:                Payload data
+ *                                 Character: <length> bytes, NUL-padded
+ *                                 Numeric:   8 bytes IEEE 754 double (LE)
+ *
+ * File ends with 0x1A (DOS EOF marker).
+ * No file header — first record is the first variable.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 
 #include "memfile.h"
 #include "variables.h"
 #include "exprvalue.h"
 
+#define MEM_HEADER_SIZE  32
+#define MEM_EOF_MARKER   0x1A
+#define MEM_TYPE_CHAR    0xC3
+#define MEM_TYPE_NUMERIC 0xCE
+
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-static void to_upper(char *dst, const char *src, int max_len)
+static void write_le16(unsigned char *buf, unsigned short val)
 {
-    int i;
-    for (i = 0; i < max_len && src[i] != '\0'; i++) {
-        dst[i] = (char)toupper((unsigned char)src[i]);
-    }
-    for (; i < max_len; i++) {
-        dst[i] = '\0';
-    }
+    buf[0] = val & 0xFF;
+    buf[1] = (val >> 8) & 0xFF;
 }
 
-static void write_le16(FILE *f, unsigned short val)
+static unsigned short read_le16(const unsigned char *buf)
 {
-    unsigned char buf[2];
-    buf[0] = val & 0xff;
-    buf[1] = (val >> 8) & 0xff;
-    fwrite(buf, 1, 2, f);
-}
-
-static unsigned short read_le16(FILE *f)
-{
-    unsigned char buf[2];
-    if (fread(buf, 1, 2, f) != 2)
-        return 0;
     return (unsigned short)(buf[0] | (buf[1] << 8));
 }
 
 /* ------------------------------------------------------------------ */
 /* SAVE TO                                                             */
 /* ------------------------------------------------------------------ */
-
-/* Encode an ExprValue into a buffer. Returns the type byte and sets *out_len. */
-static int encode_value(const ExprValue *val, unsigned char *buf, int buf_size, int *out_len)
-{
-    int type_byte;
-    int val_len;
-
-    switch (val->type) {
-        case VAL_NULL:
-            type_byte = 0; /* C */
-            buf[0] = '\0';
-            val_len = 1;
-            break;
-
-        case VAL_INTEGER:
-        case VAL_REAL:
-            type_byte = 1; /* N */
-            /* Store as double, right-aligned in a 24-byte area */
-            memset(buf, 0, buf_size);
-            *(double *)(buf + buf_size - 8) = val->data.rval;
-            val_len = buf_size;
-            break;
-
-        case VAL_STRING: {
-            type_byte = 0; /* C */
-            const char *s = val->data.sval ? val->data.sval : "";
-            int slen = (int)strlen(s);
-            /* Length-prefixed: first byte is string length, then data */
-            if (slen + 1 > buf_size)
-                slen = buf_size - 1;
-            buf[0] = (unsigned char)slen;
-            memcpy(buf + 1, s, slen);
-            memset(buf + 1 + slen, 0, buf_size - 1 - slen);
-            val_len = buf_size;
-            break;
-        }
-
-        case VAL_DATE:
-            type_byte = 3; /* D */
-            /* Store date as string "YYYY-MM-DD" (10 chars) + null */
-            memset(buf, 0, buf_size);
-            buf[0] = 10; /* string length */
-            memcpy(buf + 1, val->data.dval, 10);
-            val_len = buf_size;
-            break;
-
-        case VAL_LOGICAL:
-            type_byte = 2; /* L */
-            buf[0] = val->data.rval != 0 ? 0x01 : 0x00;
-            val_len = 1;
-            break;
-
-        default:
-            type_byte = 0;
-            buf[0] = '\0';
-            val_len = 1;
-            break;
-    }
-
-    *out_len = val_len;
-    return type_byte;
-}
-
-/* Value area size for a given type */
-static int value_area_size(ValType type)
-{
-    switch (type) {
-        case VAL_NULL:
-        case VAL_LOGICAL:
-            return 1;
-        case VAL_STRING:
-        case VAL_DATE:
-        case VAL_INTEGER:
-        case VAL_REAL:
-            return 24; /* Standard value area size */
-        default:
-            return 24;
-    }
-}
 
 int memfile_save(const char *path, const char **names, int name_count)
 {
@@ -160,33 +84,64 @@ int memfile_save(const char *path, const char **names, int name_count)
             }
         }
 
-        /* Write record header (16 bytes) */
-        char name_buf[11];
-        to_upper(name_buf, name, 10);
-        fwrite(name_buf, 1, 10, f);
+        /* Build 32-byte header */
+        unsigned char header[MEM_HEADER_SIZE];
+        memset(header, 0, MEM_HEADER_SIZE);
 
-        int val_area_size = value_area_size(val.type);
-        unsigned char *val_buf = calloc(1, (size_t)val_area_size);
-        if (!val_buf) {
-            free_value(&val);
-            continue;
+        /* Name: 11 bytes, uppercase, NUL-padded */
+        for (int c = 0; c < 11 && name[c]; c++)
+            header[c] = (unsigned char)toupper((unsigned char)name[c]);
+
+        /* Record ID: dBase III style (0x47D6 in upper bytes) */
+        unsigned short rec_id = (unsigned short)(saved + 1);
+        write_le16(header + 12, rec_id);
+        header[14] = 0x47;
+        header[15] = 0xD6;
+
+        if (val.type == VAL_INTEGER || val.type == VAL_REAL) {
+            /* Numeric: type byte 0xCE, width/decimals at [0x10-0x11] */
+            header[0x0B] = MEM_TYPE_NUMERIC;
+            header[0x10] = 16;  /* width */
+            header[0x11] = 2;   /* decimals */
+
+            /* Payload: 8-byte IEEE 754 double (LE) */
+            double d = val.data.rval;
+            unsigned char payload[8];
+            memcpy(payload, &d, 8);
+
+            fwrite(header, 1, MEM_HEADER_SIZE, f);
+            fwrite(payload, 1, 8, f);
+
+        } else {
+            /* Character: type byte 0xC3, payload length at [0x10-0x11] */
+            header[0x0B] = MEM_TYPE_CHAR;
+
+            const char *s = "";
+            int slen = 0;
+            if (val.type == VAL_STRING && val.data.sval) {
+                s = val.data.sval;
+                slen = (int)strlen(s);
+            } else if (val.type == VAL_DATE) {
+                s = val.data.dval;
+                slen = 8; /* YYYYMMDD */
+            } else if (val.type == VAL_LOGICAL) {
+                s = val.data.rval != 0 ? "T" : "F";
+                slen = 1;
+            }
+
+            write_le16(header + 0x10, (unsigned short)slen);
+
+            fwrite(header, 1, MEM_HEADER_SIZE, f);
+            if (slen > 0)
+                fwrite(s, 1, (size_t)slen, f);
         }
 
-        int type_byte = encode_value(&val, val_buf, val_area_size, &val_area_size);
         free_value(&val);
-
-        fwrite(&type_byte, 1, 1, f);           /* Type */
-        fwrite("\xce", 1, 1, f);               /* Flag (0xce) */
-        write_le16(f, (unsigned short)val_area_size); /* Value length */
-        write_le16(f, 0xd647);                 /* Magic */
-        fwrite(val_buf, 1, (size_t)val_area_size, f); /* Value data */
-
-        free(val_buf);
         saved++;
     }
 
     /* EOF marker */
-    unsigned char eof_marker = 0x1a;
+    unsigned char eof_marker = MEM_EOF_MARKER;
     fwrite(&eof_marker, 1, 1, f);
 
     fclose(f);
@@ -203,139 +158,114 @@ int memfile_restore(const char *path, int additive)
     if (!f)
         return -1;
 
-    /* If not additive, clear all existing variables first */
     if (!additive) {
         vars_shutdown();
         vars_init();
     }
 
-    int loaded = 0;
+    /* Read entire file into memory */
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
 
-    while (!feof(f)) {
-        /* Read variable name (10 bytes) */
-        char name_buf[11];
-        size_t nread = fread(name_buf, 1, 10, f);
-        if (nread == 0)
-            break;
-        if (nread < 10) {
-            /* Partial read — might be EOF marker */
-            name_buf[nread] = '\0';
-            for (size_t i = nread; i < 10; i++)
-                name_buf[i] = '\0';
-        } else {
-            name_buf[10] = '\0';
-        }
-
-        /* Check for EOF marker (0x1a) in the name area */
-        int is_eof = 0;
-        for (size_t i = 0; i < nread; i++) {
-            if (name_buf[i] == 0x1a) {
-                is_eof = 1;
-                break;
-            }
-        }
-        if (is_eof)
-            break;
-
-        /* Skip empty names (padding) */
-        if (name_buf[0] == '\0') {
-            /* Might be end of file or padding — try to skip to next record */
-            fseek(f, 31, SEEK_CUR); /* Skip remaining 31 bytes of potential record */
-            continue;
-        }
-
-        /* Read type byte */
-        unsigned char type_byte;
-        if (fread(&type_byte, 1, 1, f) != 1)
-            break;
-
-        /* Read flag byte */
-        unsigned char flag_byte;
-        if (fread(&flag_byte, 1, 1, f) != 1)
-            break;
-
-        /* Read value length */
-        unsigned short val_len = read_le16(f);
-        if (val_len == 0 || val_len > 4096) {
-            /* Invalid length — skip this record */
-            continue;
-        }
-
-        /* Read magic */
-        unsigned short magic = read_le16(f);
-        (void)magic; /* We accept both 0xd647 and 0xca66 */
-
-        /* Read value data */
-        unsigned char *val_buf = malloc((size_t)val_len);
-        if (!val_buf)
-            break;
-        if (fread(val_buf, 1, (size_t)val_len, f) != val_len) {
-            free(val_buf);
-            break;
-        }
-
-        /* Decode value based on type */
-        ExprValue val;
-        switch (type_byte) {
-            case 0: { /* Character */
-                /* Length-prefixed string: first byte is length */
-                int slen = val_buf[0];
-                if (slen > (int)val_len - 1)
-                    slen = (int)val_len - 1;
-                char *s = malloc((size_t)(slen + 1));
-                if (s) {
-                    memcpy(s, val_buf + 1, (size_t)slen);
-                    s[slen] = '\0';
-                    val = val_string(s);
-                    free(s);
-                } else {
-                    val = val_string("");
-                }
-                break;
-            }
-
-            case 1: { /* Numeric — double right-aligned in value area */
-                double d = 0.0;
-                if (val_len >= 8) {
-                    memcpy(&d, val_buf + val_len - 8, 8);
-                }
-                val = val_real(d);
-                break;
-            }
-
-            case 2: { /* Logical */
-                int t = (val_len > 0 && val_buf[0] != 0x00) ? 1 : 0;
-                val = val_logical(t);
-                break;
-            }
-
-            case 3: { /* Date */
-                /* Date stored as length-prefixed string "YYYY-MM-DD" */
-                char date_str[12] = "0000-00-00";
-                int slen = val_buf[0];
-                if (slen > 10)
-                    slen = 10;
-                if (slen > 0 && slen <= (int)val_len - 1) {
-                    memcpy(date_str, val_buf + 1, (size_t)slen);
-                }
-                date_str[10] = '\0';
-                val = val_date(date_str);
-                break;
-            }
-
-            default:
-                val = val_null();
-                break;
-        }
-
-        free(val_buf);
-
-        /* Store variable */
-        vars_set(name_buf, &val);
-        free_value(&val);
-        loaded++;
+    if (file_size <= 0) {
+        fclose(f);
+        return 0;
     }
 
+    unsigned char *data = malloc((size_t)file_size);
+    if (!data) {
+        fclose(f);
+        return -1;
+    }
+    if ((long)fread(data, 1, (size_t)file_size, f) != (size_t)file_size) {
+        free(data);
+        fclose(f);
+        return -1;
+    }
     fclose(f);
+
+    int loaded = 0;
+    size_t pos = 0;
+
+    while (pos < (size_t)file_size) {
+        /* DOS EOF marker */
+        if (data[pos] == MEM_EOF_MARKER)
+            break;
+
+        /* Need a full 32-byte header */
+        if (pos + MEM_HEADER_SIZE > (size_t)file_size)
+            break;
+
+        unsigned char *header = data + pos;
+
+        /* Extract name: 11 bytes, NUL-terminated */
+        char name[12];
+        memcpy(name, header, 11);
+        name[11] = '\0';
+        /* Strip trailing NULs/spaces */
+        int nlen = 11;
+        while (nlen > 0 && (name[nlen - 1] == '\0' || name[nlen - 1] == ' '))
+            nlen--;
+        name[nlen] = '\0';
+
+        /* Type byte */
+        unsigned char type_byte = header[0x0B];
+
+        size_t payload_len = 0;
+        size_t payload_start = pos + MEM_HEADER_SIZE;
+
+        if (type_byte == MEM_TYPE_NUMERIC) {
+            /* Numeric: always 8 bytes */
+            payload_len = 8;
+
+            if (payload_start + payload_len > (size_t)file_size)
+                break;
+
+            double d;
+            memcpy(&d, data + payload_start, 8);
+
+            ExprValue val;
+            if (d == (double)(int)d) {
+                val = val_integer((int)d);
+            } else {
+                val = val_real(d);
+            }
+            vars_set(name, &val);
+            free_value(&val);
+
+        } else if (type_byte == MEM_TYPE_CHAR) {
+            /* Character: length from header[0x10-0x11] */
+            payload_len = read_le16(header + 0x10);
+
+            if (payload_start + payload_len > (size_t)file_size)
+                break;
+
+            /* Read payload, strip trailing NULs */
+            char *s = malloc(payload_len + 1);
+            if (s) {
+                memcpy(s, data + payload_start, payload_len);
+                s[payload_len] = '\0';
+                /* Strip trailing NULs */
+                int sl = (int)payload_len;
+                while (sl > 0 && s[sl - 1] == '\0')
+                    s[--sl] = '\0';
+
+                ExprValue val = val_string(s);
+                vars_set(name, &val);
+                free_value(&val);
+                free(s);
+            }
+
+        } else {
+            /* Unknown type — skip this record */
+            break;
+        }
+
+        loaded++;
+        pos = payload_start + payload_len;
+    }
+
+    free(data);
     return loaded;
 }

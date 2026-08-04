@@ -90,6 +90,7 @@ static ExprValue builtin_alias(Token **cur, ParseError *err);
 static ExprValue builtin_dbf(Token **cur, ParseError *err);
 static ExprValue builtin_deleted(Token **cur, ParseError *err);
 static ExprValue builtin_found(Token **cur, ParseError *err);
+static ExprValue builtin_seconds(Token **cur, ParseError *err);
 static ExprValue builtin_sign(Token **cur, ParseError *err);
 static ExprValue builtin_exp(Token **cur, ParseError *err);
 static ExprValue builtin_log(Token **cur, ParseError *err);
@@ -681,10 +682,8 @@ static ExprValue parse_primary(Token **cur, ParseError *err) {
             /* Variable reference — look up in the variable store. */
             *cur = saved;
             *cur = tok->next;
-            if (vars_exists(tok->value)) {
-                return vars_get(tok->value);
-            }
-            /* Check if it's a field name in the current DBF */
+            /* Field names take precedence over variables when a DBF is open
+               (standard xBase semantics: PUBLIC/MEMVAR shadowing). */
             {
                 int fidx = wa_field_to_number(tok->value);
                 if (fidx > 0) {
@@ -728,6 +727,10 @@ static ExprValue parse_primary(Token **cur, ParseError *err) {
                     }
                     return result;
                 }
+            }
+            /* Not a field — try variable store */
+            if (vars_exists(tok->value)) {
+                return vars_get(tok->value);
             }
             return val_null();
         }
@@ -793,6 +796,7 @@ static const FuncEntry func_table[] = {
     { KW_SIGN,      builtin_sign },
     { KW_STR,       builtin_str },
     { KW_SQRT,      builtin_sqrt },
+    { KW_SECONDS,   builtin_seconds },
     { KW_REPLICATE, builtin_replicate },
     { KW_SPACE,     builtin_space },
     { KW_SUBSTR,    builtin_substr },
@@ -1725,6 +1729,14 @@ static ExprValue builtin_deleted(Token **cur, ParseError *err) {
 static ExprValue builtin_found(Token **cur, ParseError *err) {
     (void)cur; (void)err;
     return val_logical(wa_found());
+}
+
+/* SECONDS() — monotonic clock as double (for benchmarking) */
+static ExprValue builtin_seconds(Token **cur, ParseError *err) {
+    (void)cur; (void)err;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return val_real((double)ts.tv_sec + (double)ts.tv_nsec / 1e9);
 }
 
 static ExprValue builtin_sign(Token **cur, ParseError *err) {

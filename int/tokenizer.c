@@ -150,6 +150,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"SAFETY",       KW_SAFETY},
     {"SAVE",         KW_SAVE},
     {"SAY",          KW_SAY},
+    {"SECONDS",      KW_SECONDS},
     {"SEEK",         KW_SEEK},
     {"SELECT",       KW_SELECT},
     {"SET",          KW_SET},

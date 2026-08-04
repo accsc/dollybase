@@ -237,9 +237,9 @@ x = field_to_number(asp,campo);
 	fprintf(stderr,"Header len: %i\n",asp->header_len);
 	fflush(stderr);
 #endif
-if (x <= 0)
+if (x < 0)
 {
-  fprintf(stderr,"Invalid field name\n");
+  fprintf(stderr,"replace: Invalid field name %s\n",campo);
   fclose(a);
   return -1;
 }
@@ -767,9 +767,9 @@ x = field_to_number(asp,campo);
 	fprintf(stderr,"Header len: %i\n",asp->header_len);
 	fflush(stderr);
 #endif
-if (x <= 0)
+if (x < 0)
 {
-  fprintf(stderr,"Invalid field name\n");
+  fprintf(stderr,"replace2: Invalid field name %s\n",campo);
   fclose(a);
   return -1;
 }

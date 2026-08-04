@@ -1,183 +1,431 @@
-* benchmark_products.prg - Benchmark SEEK, LOCATE, SKIP on 100k products
+* benchmark_products.prg - Benchmark SEEK (NDX index) vs LOCATE (linear scan)
 * Usage: DO benchmark_products
 * Requires: products.dbf with data, products_barcode.ndx, products_category.ndx
 
 SET TALK OFF
 
-? "=== Product Database Benchmark ==="
-? "Start: " + TIME()
+? "=== SEEK (NDX) vs LOCATE Benchmark ==="
+? "Date: " + DTOC(DATE()) + "  Time: " + TIME()
 ? ""
 
 SELECT 1
 USE products
-? "Records: " + STR(RECCOUNT())
+total = RECCOUNT()
+? "Records: " + STR(total)
 ? ""
 
-* --- Test 1: Sequential scan with SKIP ---
-? "--- Test 1: Sequential SKIP through all records ---"
-t1_start = TIME()
+* --- Collect actual barcodes from the data for testing ---
+* Pick 10 barcodes spread across the file (hardcoded vars, no arrays)
+num_test_keys = 10
+m_step = INT(total / num_test_keys)
+IF m_step < 1
+    m_step = 1
+ENDIF
+k = 0
 GO TOP
-skip_count = 0
-DO WHILE .NOT. EOF()
-    skip_count = skip_count + 1
+rec = 0
+DO WHILE k < num_test_keys .AND. .NOT. EOF()
+    IF rec % m_step = 0
+        k = k + 1
+        DO CASE
+            CASE k = 1
+                test_bc1 = BARCODE
+            CASE k = 2
+                test_bc2 = BARCODE
+            CASE k = 3
+                test_bc3 = BARCODE
+            CASE k = 4
+                test_bc4 = BARCODE
+            CASE k = 5
+                test_bc5 = BARCODE
+            CASE k = 6
+                test_bc6 = BARCODE
+            CASE k = 7
+                test_bc7 = BARCODE
+            CASE k = 8
+                test_bc8 = BARCODE
+            CASE k = 9
+                test_bc9 = BARCODE
+            CASE k = 10
+                test_bc10 = BARCODE
+        ENDCASE
+    ENDIF
+    rec = rec + 1
     SKIP
 ENDDO
-t1_end = TIME()
-? "  Skipped " + STR(skip_count) + " records"
-? "  Time: " + t1_start + " -> " + t1_end
+? "Test keys collected: " + STR(k)
 ? ""
 
-* --- Test 2: LOCATE by barcode (linear scan, no index) ---
-? "--- Test 2: LOCATE barcode (no index) ---"
-USE products
+* --- Warm-up ---
+SET INDEX TO products_barcode
+SEEK test_bc1
 SET INDEX TO
 GO TOP
-t2_start = TIME()
-LOCATE FOR BARCODE = "84123456700001"
-t2_end = TIME()
-found2 = .NOT. EOF()
-? "  Found: " + IIF(found2, "YES", "NO")
-IF found2
-    ? "  Barcode: " + BARCODE
-    ? "  Name: " + NAME
+LOCATE FOR BARCODE = test_bc1
+SET INDEX TO products_barcode
+GO TOP
+
+* ========================================================================
+* Test 1: Single SEEK vs single LOCATE on barcode (unique key, found)
+* ========================================================================
+? "--- Test 1: Single lookup by barcode (found) ---"
+iterations = 5
+test_bc = test_bc1
+
+SET INDEX TO products_barcode
+t_seek = 0
+iter = 0
+DO WHILE iter < iterations
+    iter = iter + 1
+    GO TOP
+    t0 = SECONDS()
+    SEEK test_bc
+    t1 = SECONDS()
+    t_seek = t_seek + (t1 - t0)
+ENDDO
+avg_seek = t_seek / iterations
+? "  SEEK (with NDX):     " + STR(t_seek, 8, 4) + "s  (" + STR(avg_seek * 1000, 6, 2) + " ms/op)"
+
+SET INDEX TO
+t_locate = 0
+iter = 0
+DO WHILE iter < iterations
+    iter = iter + 1
+    GO TOP
+    t0 = SECONDS()
+    LOCATE FOR BARCODE = test_bc
+    t1 = SECONDS()
+    t_locate = t_locate + (t1 - t0)
+ENDDO
+avg_locate = t_locate / iterations
+? "  LOCATE (no index):   " + STR(t_locate, 8, 4) + "s  (" + STR(avg_locate * 1000, 6, 2) + " ms/op)"
+IF t_seek > 0
+    ? "  Speedup:           " + STR(t_locate / t_seek, 6, 1) + "x"
 ENDIF
-? "  Time: " + t2_start + " -> " + t2_end
 ? ""
 
-* --- Test 3: LOCATE by category (linear scan) ---
-? "--- Test 3: LOCATE category=Dairy (no index) ---"
-GO TOP
-t3_start = TIME()
-LOCATE FOR CATEGORY = "Dairy"
-t3_end = TIME()
-found3 = .NOT. EOF()
-? "  Found: " + IIF(found3, "YES", "NO")
-IF found3
-    ? "  Category: " + CATEGORY
+* ========================================================================
+* Test 2: SEEK vs LOCATE on barcode (unique key, NOT found)
+* ========================================================================
+? "--- Test 2: Single lookup by barcode (not found) ---"
+miss_bc = "9999999999999"
+
+SET INDEX TO products_barcode
+t_seek = 0
+iter = 0
+DO WHILE iter < iterations
+    iter = iter + 1
+    GO TOP
+    t0 = SECONDS()
+    SEEK miss_bc
+    t1 = SECONDS()
+    t_seek = t_seek + (t1 - t0)
+ENDDO
+avg_seek = t_seek / iterations
+? "  SEEK (with NDX):     " + STR(t_seek, 8, 4) + "s  (" + STR(avg_seek * 1000, 6, 2) + " ms/op)"
+
+SET INDEX TO
+t_locate = 0
+iter = 0
+DO WHILE iter < iterations
+    iter = iter + 1
+    GO TOP
+    t0 = SECONDS()
+    LOCATE FOR BARCODE = miss_bc
+    t1 = SECONDS()
+    t_locate = t_locate + (t1 - t0)
+ENDDO
+avg_locate = t_locate / iterations
+? "  LOCATE (no index):   " + STR(t_locate, 8, 4) + "s  (" + STR(avg_locate * 1000, 6, 2) + " ms/op)"
+IF t_seek > 0
+    ? "  Speedup:           " + STR(t_locate / t_seek, 6, 1) + "x"
 ENDIF
-? "  Time: " + t3_start + " -> " + t3_end
 ? ""
 
-* --- Test 4: COUNT by category ---
-? "--- Test 4: COUNT records per category (no index) ---"
+* ========================================================================
+* Test 3: Batch SEEK vs LOCATE on barcodes (actual data keys)
+* ========================================================================
+? "--- Test 3: " + STR(num_test_keys) + " barcode lookups (actual data keys) ---"
+
+SET INDEX TO products_barcode
+t_seek = 0
+seek_hits = 0
 GO TOP
-t4_start = TIME()
-dairy_count = 0
-bakery_count = 0
-beverage_count = 0
-produce_count = 0
-other_count = 0
+t0 = SECONDS()
+SEEK test_bc1
+t1 = SECONDS()
+t_seek = t_seek + (t1 - t0)
+IF .NOT. EOF()
+    seek_hits = seek_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+SEEK test_bc2
+t1 = SECONDS()
+t_seek = t_seek + (t1 - t0)
+IF .NOT. EOF()
+    seek_hits = seek_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+SEEK test_bc3
+t1 = SECONDS()
+t_seek = t_seek + (t1 - t0)
+IF .NOT. EOF()
+    seek_hits = seek_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+SEEK test_bc4
+t1 = SECONDS()
+t_seek = t_seek + (t1 - t0)
+IF .NOT. EOF()
+    seek_hits = seek_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+SEEK test_bc5
+t1 = SECONDS()
+t_seek = t_seek + (t1 - t0)
+IF .NOT. EOF()
+    seek_hits = seek_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+SEEK test_bc6
+t1 = SECONDS()
+t_seek = t_seek + (t1 - t0)
+IF .NOT. EOF()
+    seek_hits = seek_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+SEEK test_bc7
+t1 = SECONDS()
+t_seek = t_seek + (t1 - t0)
+IF .NOT. EOF()
+    seek_hits = seek_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+SEEK test_bc8
+t1 = SECONDS()
+t_seek = t_seek + (t1 - t0)
+IF .NOT. EOF()
+    seek_hits = seek_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+SEEK test_bc9
+t1 = SECONDS()
+t_seek = t_seek + (t1 - t0)
+IF .NOT. EOF()
+    seek_hits = seek_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+SEEK test_bc10
+t1 = SECONDS()
+t_seek = t_seek + (t1 - t0)
+IF .NOT. EOF()
+    seek_hits = seek_hits + 1
+ENDIF
+? "  SEEK (with NDX):     " + STR(t_seek, 8, 4) + "s  (" + STR(t_seek / num_test_keys * 1000, 6, 2) + " ms/op)  hits=" + STR(seek_hits)
+
+SET INDEX TO
+t_locate = 0
+locate_hits = 0
+GO TOP
+t0 = SECONDS()
+LOCATE FOR BARCODE = test_bc1
+t1 = SECONDS()
+t_locate = t_locate + (t1 - t0)
+IF .NOT. EOF()
+    locate_hits = locate_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+LOCATE FOR BARCODE = test_bc2
+t1 = SECONDS()
+t_locate = t_locate + (t1 - t0)
+IF .NOT. EOF()
+    locate_hits = locate_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+LOCATE FOR BARCODE = test_bc3
+t1 = SECONDS()
+t_locate = t_locate + (t1 - t0)
+IF .NOT. EOF()
+    locate_hits = locate_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+LOCATE FOR BARCODE = test_bc4
+t1 = SECONDS()
+t_locate = t_locate + (t1 - t0)
+IF .NOT. EOF()
+    locate_hits = locate_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+LOCATE FOR BARCODE = test_bc5
+t1 = SECONDS()
+t_locate = t_locate + (t1 - t0)
+IF .NOT. EOF()
+    locate_hits = locate_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+LOCATE FOR BARCODE = test_bc6
+t1 = SECONDS()
+t_locate = t_locate + (t1 - t0)
+IF .NOT. EOF()
+    locate_hits = locate_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+LOCATE FOR BARCODE = test_bc7
+t1 = SECONDS()
+t_locate = t_locate + (t1 - t0)
+IF .NOT. EOF()
+    locate_hits = locate_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+LOCATE FOR BARCODE = test_bc8
+t1 = SECONDS()
+t_locate = t_locate + (t1 - t0)
+IF .NOT. EOF()
+    locate_hits = locate_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+LOCATE FOR BARCODE = test_bc9
+t1 = SECONDS()
+t_locate = t_locate + (t1 - t0)
+IF .NOT. EOF()
+    locate_hits = locate_hits + 1
+ENDIF
+GO TOP
+t0 = SECONDS()
+LOCATE FOR BARCODE = test_bc10
+t1 = SECONDS()
+t_locate = t_locate + (t1 - t0)
+IF .NOT. EOF()
+    locate_hits = locate_hits + 1
+ENDIF
+? "  LOCATE (no index):   " + STR(t_locate, 8, 4) + "s  (" + STR(t_locate / num_test_keys * 1000, 6, 2) + " ms/op)  hits=" + STR(locate_hits)
+IF t_seek > 0
+    ? "  Speedup:           " + STR(t_locate / t_seek, 6, 1) + "x"
+ENDIF
+? ""
+
+* ========================================================================
+* Test 4: SEEK vs LOCATE on category (non-unique key, found)
+* ========================================================================
+? "--- Test 4: Single lookup by category=Dairy (found) ---"
+iterations = 5
+
+SET INDEX TO products_category
+t_seek = 0
+iter = 0
+DO WHILE iter < iterations
+    iter = iter + 1
+    GO TOP
+    t0 = SECONDS()
+    SEEK "Dairy"
+    t1 = SECONDS()
+    t_seek = t_seek + (t1 - t0)
+ENDDO
+? "  SEEK (with NDX):     " + STR(t_seek, 8, 4) + "s  (" + STR(t_seek / iterations * 1000, 6, 2) + " ms/op)"
+
+SET INDEX TO
+t_locate = 0
+iter = 0
+DO WHILE iter < iterations
+    iter = iter + 1
+    GO TOP
+    t0 = SECONDS()
+    LOCATE FOR CATEGORY = "Dairy"
+    t1 = SECONDS()
+    t_locate = t_locate + (t1 - t0)
+ENDDO
+? "  LOCATE (no index):   " + STR(t_locate, 8, 4) + "s  (" + STR(t_locate / iterations * 1000, 6, 2) + " ms/op)"
+IF t_seek > 0
+    ? "  Speedup:           " + STR(t_locate / t_seek, 6, 1) + "x"
+ENDIF
+? ""
+
+* ========================================================================
+* Test 5: Full sequential scan
+* ========================================================================
+? "--- Test 5: Full sequential scan (all " + STR(total) + " records) ---"
+
+SET INDEX TO
+t0 = SECONDS()
+GO TOP
+scan_count = 0
+DO WHILE .NOT. EOF()
+    scan_count = scan_count + 1
+    SKIP
+ENDDO
+t1 = SECONDS()
+? "  SKIP scan:           " + STR(t1 - t0, 8, 4) + "s  (" + STR((t1 - t0) / scan_count * 1000, 6, 3) + " ms/rec)  records=" + STR(scan_count)
+? ""
+
+* ========================================================================
+* Test 6: Category count via full scan
+* ========================================================================
+? "--- Test 6: Count records per category (full scan) ---"
+
+SET INDEX TO
+t0 = SECONDS()
+GO TOP
+cnt_bakery = 0
+cnt_beverages = 0
+cnt_dairy = 0
+cnt_frozen = 0
+cnt_meat = 0
+cnt_produce = 0
+cnt_snacks = 0
+cnt_other = 0
 DO WHILE .NOT. EOF()
     DO CASE
-        CASE CATEGORY = "Dairy"
-            dairy_count = dairy_count + 1
         CASE CATEGORY = "Bakery"
-            bakery_count = bakery_count + 1
+            cnt_bakery = cnt_bakery + 1
         CASE CATEGORY = "Beverages"
-            beverage_count = beverage_count + 1
+            cnt_beverages = cnt_beverages + 1
+        CASE CATEGORY = "Dairy"
+            cnt_dairy = cnt_dairy + 1
+        CASE CATEGORY = "Frozen"
+            cnt_frozen = cnt_frozen + 1
+        CASE CATEGORY = "Meat"
+            cnt_meat = cnt_meat + 1
         CASE CATEGORY = "Produce"
-            produce_count = produce_count + 1
+            cnt_produce = cnt_produce + 1
+        CASE CATEGORY = "Snacks"
+            cnt_snacks = cnt_snacks + 1
         OTHERWISE
-            other_count = other_count + 1
+            cnt_other = cnt_other + 1
     ENDCASE
     SKIP
 ENDDO
-t4_end = TIME()
-? "  Dairy: " + STR(dairy_count)
-? "  Bakery: " + STR(bakery_count)
-? "  Beverages: " + STR(beverage_count)
-? "  Produce: " + STR(produce_count)
-? "  Other: " + STR(other_count)
-? "  Time: " + t4_start + " -> " + t4_end
+t1 = SECONDS()
+? "  Bakery:      " + STR(cnt_bakery, 6)
+? "  Beverages:   " + STR(cnt_beverages, 6)
+? "  Dairy:       " + STR(cnt_dairy, 6)
+? "  Frozen:      " + STR(cnt_frozen, 6)
+? "  Meat:        " + STR(cnt_meat, 6)
+? "  Produce:     " + STR(cnt_produce, 6)
+? "  Snacks:      " + STR(cnt_snacks, 6)
+? "  Other:       " + STR(cnt_other, 6)
+? "  Time:        " + STR(t1 - t0, 8, 4) + "s"
 ? ""
 
-* --- Test 5: SEEK with barcode index ---
-? "--- Test 5: SEEK barcode (with index) ---"
-SET INDEX TO products_barcode
-t5_start = TIME()
-SEEK "84123456700001"
-t5_end = TIME()
-found5 = .NOT. EOF()
-? "  Found: " + IIF(found5, "YES", "NO")
-IF found5
-    ? "  Barcode: " + BARCODE
-    ? "  Name: " + NAME
-ENDIF
-? "  Time: " + t5_start + " -> " + t5_end
-? ""
-
-* --- Test 6: Multiple SEEKs with barcode index ---
-? "--- Test 6: 100 sequential SEEKs (barcode index) ---"
-t6_start = TIME()
-seek_found = 0
-seek_num = 0
-DO WHILE seek_num < 100
-    seek_num = seek_num + 1
-    sbc = ALLTRIM(STR(seek_num))
-    sbc_pad = 5 - LEN(sbc)
-    IF sbc_pad < 0
-        sbc_pad = 0
-    ENDIF
-    seek_bc = "841234567" + REPLICATE("0", sbc_pad) + sbc
-    SEEK seek_bc
-    IF .NOT. EOF()
-        seek_found = seek_found + 1
-    ENDIF
-ENDDO
-t6_end = TIME()
-? "  Found " + STR(seek_found) + " / 100 seeks"
-? "  Time: " + t6_start + " -> " + t6_end
-? ""
-
-* --- Test 7: SEEK with category index ---
-? "--- Test 7: SEEK category (with index) ---"
-SET INDEX TO products_category
-t7_start = TIME()
-SEEK "Dairy"
-t7_end = TIME()
-found7 = .NOT. EOF()
-? "  Found: " + IIF(found7, "YES", "NO")
-IF found7
-    ? "  Category: " + CATEGORY
-    ? "  Name: " + NAME
-ENDIF
-? "  Time: " + t7_start + " -> " + t7_end
-? ""
-
-* --- Test 8: COUNT with category index (SKIP within index range) ---
-? "--- Test 8: COUNT Dairy with index SKIP ---"
-SET INDEX TO products_category
-SEEK "Dairy"
-t8_start = TIME()
-idx_count = 0
-DO WHILE .NOT. EOF() .AND. CATEGORY = "Dairy"
-    idx_count = idx_count + 1
-    SKIP
-ENDDO
-t8_end = TIME()
-? "  Dairy count via index: " + STR(idx_count)
-? "  (vs linear scan: " + STR(dairy_count) + ")"
-? "  Time: " + t8_start + " -> " + t8_end
-? ""
-
-* --- Test 9: GO TOP + SKIP random positions ---
-? "--- Test 9: 50 random GO TOP + SKIP ---"
-SET INDEX TO
-t9_start = TIME()
-goseek_num = 0
-SEED = 42
-DO WHILE goseek_num < 50
-    goseek_num = goseek_num + 1
-    SEED = MOD(SEED * 1103515245 + 12345, 2147483648)
-    target = MOD(INT(SEED / 65536), RECCOUNT()) + 1
-    GO target
-ENDDO
-t9_end = TIME()
-? "  Completed 50 random GO operations"
-? "  Time: " + t9_start + " -> " + t9_end
-? ""
-
-* --- Summary ---
+* ========================================================================
+* Summary
+* ========================================================================
 ? "=== Benchmark Complete ==="
 ? "End: " + TIME()
 

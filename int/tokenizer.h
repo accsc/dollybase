@@ -199,6 +199,7 @@ typedef enum {
     KW_SIGN,
     KW_STR,
     KW_SQRT,
+    KW_SECONDS,
     KW_SPACE,
     KW_SUBSTR,
     KW_STUFF,

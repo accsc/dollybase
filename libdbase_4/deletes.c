@@ -157,7 +157,10 @@ nomb_tmp[prefix_len + 6] = '\0';
 if( (h = fopen(asp->name,"rb")) == NULL)
 	return -1;
 if ( (j = fopen(nomb_tmp,"wb")) == NULL)
+{
+	fclose(h);
 	return -1;
+}
 for(mas = 1; mas <= asp->header_len; ++mas)
 {
 	putc(getc(h),j);

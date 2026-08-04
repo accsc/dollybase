@@ -7,31 +7,21 @@
 * This program will DELETE ALL existing records and regenerate
 
 SET TALK OFF
-SET PROCEDURE TO gen_helpers
 
-? "=== Generating 100000 products ==="
-? "Start time: " + TIME()
+* --- Progress bar setup ---
+@ 1, 0 SAY "=== Generating " + STR(TOTAL, 6) + " products ==="
+@ 2, 0 SAY "Start: " + TIME()
+@ 3, 0 SAY ""
+@ 4, 0 SAY ""
+
+* Progress bar row
+prog_row = 6
 
 * --- Pseudo-random number generator (LCG) ---
-* SEED is a global variable mutated by DO rand_next
 SEED = 12345
 
-* --- Data tables stored as pipe-delimited strings ---
-* 20 categories, 10 entries each
-CATEGORY_LIST = "Dairy|Bakery|Beverages|Snacks|Produce|Meat|Seafood|Frozen|Canned|Household|Personal Care|Baby|Pet Supplies|Electronics|Clothing|Sports|Books|Toys|Garden|Automotive"
-
-* Provider IDs
+* Provider count
 PROVIDER_COUNT = 20
-
-* Units
-UNIT_LIST = "unit|unit|unit|kg|kg|kg|L|L|pack|pack|box|box|can|bottle|bottle|pair|roll|tube|bag|bag"
-
-* Tax rates (Spain VAT: 4% reduced, 10% super-reduced, 21% standard)
-TAX_LIST = "4.00|4.00|10.00|10.00|21.00|21.00|21.00|4.00|10.00|21.00"
-
-* --- Product name nouns per category (pipe-delimited, 5 nouns each) ---
-* 20 categories x 5 nouns = 100 entries
-NOUN_LIST = "Leche|Yogurt|Crema|Queso|Requeson|Pan|Masa|Galleta|Bollo|Croissant|Agua|Zumo|Te|Cafe|Infusion|Patatas|Nuggets|Palitos|Galletas|Barrita|Manzanas|Platanos|Naranjas|Tomates|Zanahorias|Pollo|Ternera|Cerdo|Salchicha|Hamburguesa|Salmon|Atun|Merluza|Gambas|Calamares|Pizza|Helado|Verduras|Frutas|Empanada|Tomate|Atun|Lentejas|Garbanzos|Maiz|Limpieza|Detergente|Jabon|Papel|Esponja|Shampoo|Crema|Protector|Pasta|Desodorante|Pañales|Biberon|Leche|Toallas|Champú|Croquetas|Arena|Snack|Ración|Juguete|Cables|Auriculares|Baterias|Cargador|Memoria|Camiseta|Pantalon|Calcetines|Guantes|Bufanda|Zapatillas|Balón|Mancuernas|Esterilla|Casco|Novela|Cocina|Infantil|Historia|Guia|Puzzle|Muneco|Juego|Construccion|Coche|Planta|Fertilizante|Herramienta|Manguera|Maceta|Aceite|Filtro|Limpia|Antena|Neumático"
 
 * --- Initialize ---
 SELECT 1
@@ -93,16 +83,136 @@ DO WHILE product_num < TOTAL
 
     * Category index 1-20
     cat_idx = (rnd2 % 20) + 1
-    g_pp_str = CATEGORY_LIST
-    DO pick_pipe WITH cat_idx
-    category = g_pp_result
+    DO CASE
+        CASE cat_idx = 1  category = "Dairy"
+        CASE cat_idx = 2  category = "Bakery"
+        CASE cat_idx = 3  category = "Beverages"
+        CASE cat_idx = 4  category = "Snacks"
+        CASE cat_idx = 5  category = "Produce"
+        CASE cat_idx = 6  category = "Meat"
+        CASE cat_idx = 7  category = "Seafood"
+        CASE cat_idx = 8  category = "Frozen"
+        CASE cat_idx = 9  category = "Canned"
+        CASE cat_idx = 10 category = "Household"
+        CASE cat_idx = 11 category = "Personal Care"
+        CASE cat_idx = 12 category = "Baby"
+        CASE cat_idx = 13 category = "Pet Supplies"
+        CASE cat_idx = 14 category = "Electronics"
+        CASE cat_idx = 15 category = "Clothing"
+        CASE cat_idx = 16 category = "Sports"
+        CASE cat_idx = 17 category = "Books"
+        CASE cat_idx = 18 category = "Toys"
+        CASE cat_idx = 19 category = "Garden"
+        CASE cat_idx = 20 category = "Automotive"
+    ENDCASE
 
-    * Noun: pick from category block in NOUN_LIST (5 nouns per group)
+    * Noun: pick from category block (5 nouns per group)
+    * Using compound conditions to avoid nested DO CASE (parser limitation)
     noun_idx = (rnd3 % 5) + 1
-    noun_base_idx = (cat_idx - 1) * 5 + 1
-    g_pp_str = NOUN_LIST
-    DO pick_pipe WITH noun_base_idx + noun_idx - 1
-    noun = g_pp_result
+    noun_key = cat_idx * 10 + noun_idx
+    DO CASE
+        CASE noun_key = 11  noun = "Leche"
+        CASE noun_key = 12  noun = "Yogurt"
+        CASE noun_key = 13  noun = "Crema"
+        CASE noun_key = 14  noun = "Queso"
+        CASE noun_key = 15  noun = "Requeson"
+        CASE noun_key = 21  noun = "Pan"
+        CASE noun_key = 22  noun = "Masa"
+        CASE noun_key = 23  noun = "Galleta"
+        CASE noun_key = 24  noun = "Bollo"
+        CASE noun_key = 25  noun = "Croissant"
+        CASE noun_key = 31  noun = "Agua"
+        CASE noun_key = 32  noun = "Zumo"
+        CASE noun_key = 33  noun = "Te"
+        CASE noun_key = 34  noun = "Cafe"
+        CASE noun_key = 35  noun = "Infusion"
+        CASE noun_key = 41  noun = "Patatas"
+        CASE noun_key = 42  noun = "Nuggets"
+        CASE noun_key = 43  noun = "Palitos"
+        CASE noun_key = 44  noun = "Galletas"
+        CASE noun_key = 45  noun = "Barrita"
+        CASE noun_key = 51  noun = "Manzanas"
+        CASE noun_key = 52  noun = "Platanos"
+        CASE noun_key = 53  noun = "Naranjas"
+        CASE noun_key = 54  noun = "Tomates"
+        CASE noun_key = 55  noun = "Zanahorias"
+        CASE noun_key = 61  noun = "Pollo"
+        CASE noun_key = 62  noun = "Ternera"
+        CASE noun_key = 63  noun = "Cerdo"
+        CASE noun_key = 64  noun = "Salchicha"
+        CASE noun_key = 65  noun = "Hamburguesa"
+        CASE noun_key = 71  noun = "Salmon"
+        CASE noun_key = 72  noun = "Atun"
+        CASE noun_key = 73  noun = "Merluza"
+        CASE noun_key = 74  noun = "Gambas"
+        CASE noun_key = 75  noun = "Calamares"
+        CASE noun_key = 81  noun = "Pizza"
+        CASE noun_key = 82  noun = "Helado"
+        CASE noun_key = 83  noun = "Verduras"
+        CASE noun_key = 84  noun = "Frutas"
+        CASE noun_key = 85  noun = "Empanada"
+        CASE noun_key = 91  noun = "Tomate"
+        CASE noun_key = 92  noun = "Atun"
+        CASE noun_key = 93  noun = "Lentejas"
+        CASE noun_key = 94  noun = "Garbanzos"
+        CASE noun_key = 95  noun = "Maiz"
+        CASE noun_key = 101 noun = "Limpieza"
+        CASE noun_key = 102 noun = "Detergente"
+        CASE noun_key = 103 noun = "Jabon"
+        CASE noun_key = 104 noun = "Papel"
+        CASE noun_key = 105 noun = "Esponja"
+        CASE noun_key = 111 noun = "Shampoo"
+        CASE noun_key = 112 noun = "Crema"
+        CASE noun_key = 113 noun = "Protector"
+        CASE noun_key = 114 noun = "Pasta"
+        CASE noun_key = 115 noun = "Desodorante"
+        CASE noun_key = 121 noun = "Pañales"
+        CASE noun_key = 122 noun = "Biberon"
+        CASE noun_key = 123 noun = "Leche"
+        CASE noun_key = 124 noun = "Toallas"
+        CASE noun_key = 125 noun = "Champú"
+        CASE noun_key = 131 noun = "Croquetas"
+        CASE noun_key = 132 noun = "Arena"
+        CASE noun_key = 133 noun = "Snack"
+        CASE noun_key = 134 noun = "Ración"
+        CASE noun_key = 135 noun = "Juguete"
+        CASE noun_key = 141 noun = "Cables"
+        CASE noun_key = 142 noun = "Auriculares"
+        CASE noun_key = 143 noun = "Baterias"
+        CASE noun_key = 144 noun = "Cargador"
+        CASE noun_key = 145 noun = "Memoria"
+        CASE noun_key = 151 noun = "Camiseta"
+        CASE noun_key = 152 noun = "Pantalon"
+        CASE noun_key = 153 noun = "Calcetines"
+        CASE noun_key = 154 noun = "Guantes"
+        CASE noun_key = 155 noun = "Bufanda"
+        CASE noun_key = 161 noun = "Zapatillas"
+        CASE noun_key = 162 noun = "Balón"
+        CASE noun_key = 163 noun = "Mancuernas"
+        CASE noun_key = 164 noun = "Esterilla"
+        CASE noun_key = 165 noun = "Casco"
+        CASE noun_key = 171 noun = "Novela"
+        CASE noun_key = 172 noun = "Cocina"
+        CASE noun_key = 173 noun = "Infantil"
+        CASE noun_key = 174 noun = "Historia"
+        CASE noun_key = 175 noun = "Guia"
+        CASE noun_key = 181 noun = "Puzzle"
+        CASE noun_key = 182 noun = "Muneco"
+        CASE noun_key = 183 noun = "Juego"
+        CASE noun_key = 184 noun = "Construccion"
+        CASE noun_key = 185 noun = "Coche"
+        CASE noun_key = 191 noun = "Planta"
+        CASE noun_key = 192 noun = "Fertilizante"
+        CASE noun_key = 193 noun = "Herramienta"
+        CASE noun_key = 194 noun = "Manguera"
+        CASE noun_key = 195 noun = "Maceta"
+        CASE noun_key = 201 noun = "Aceite"
+        CASE noun_key = 202 noun = "Filtro"
+        CASE noun_key = 203 noun = "Limpia"
+        CASE noun_key = 204 noun = "Antena"
+        CASE noun_key = 205 noun = "Neumático"
+        OTHERWISE           noun = "Producto"
+    ENDCASE
 
     * Size/weight suffix
     size_idx = (rnd4 % 8) + 1
@@ -152,15 +262,27 @@ DO WHILE product_num < TOTAL
 
     * Unit
     unit_idx = (rnd1 % 20) + 1
-    g_pp_str = UNIT_LIST
-    DO pick_pipe WITH unit_idx
-    unit = g_pp_result
+    DO CASE
+        CASE unit_idx <= 3  unit = "unit"
+        CASE unit_idx <= 6  unit = "kg"
+        CASE unit_idx <= 8  unit = "L"
+        CASE unit_idx <= 10 unit = "pack"
+        CASE unit_idx <= 12 unit = "box"
+        CASE unit_idx <= 13 unit = "can"
+        CASE unit_idx <= 15 unit = "bottle"
+        CASE unit_idx <= 16 unit = "pair"
+        CASE unit_idx <= 17 unit = "roll"
+        CASE unit_idx <= 18 unit = "tube"
+        OTHERWISE            unit = "bag"
+    ENDCASE
 
     * Tax rate
     tax_idx = (rnd2 % 10) + 1
-    g_pp_str = TAX_LIST
-    DO pick_pipe WITH tax_idx
-    tax_rate = VAL(g_pp_result)
+    DO CASE
+        CASE tax_idx <= 2  tax_rate = 4.00
+        CASE tax_idx <= 4  tax_rate = 10.00
+        OTHERWISE           tax_rate = 21.00
+    ENDCASE
 
     * Last sold: random date in 2025-2026
     sold_day = (rnd3 % 28) + 1
@@ -181,27 +303,33 @@ DO WHILE product_num < TOTAL
     REPLACE BARCODE WITH barcode, NAME WITH name, CATEGORY WITH category, PRICE WITH price, COST WITH cost, STOCK WITH stock, MIN_STOCK WITH min_stock, PROVIDER_ID WITH prov_id, ACTIVE WITH active, UNIT WITH unit, TAX_RATE WITH tax_rate, LAST_SOLD WITH last_sold, REORDER_DATE WITH reorder_date
     REPLACE DESCRIPTION WITH desc
 
-    * Progress every 1000 records
-    IF MOD(product_num, BATCH) = 0
-        ? "  Generated " + STR(product_num, 6) + " / " + STR(TOTAL, 6) + " products..."
+    * Progress bar update every 500 records
+    IF MOD(product_num, 500) = 0
+        pct = INT(product_num * 100 / TOTAL)
+        filled = INT(product_num * 50 / TOTAL)
+        bar_sp = 50 - filled
+        bar = "[" + REPLICATE("#", filled) + REPLICATE(" ", bar_sp) + "]"
+        @ prog_row, 0 SAY "  " + STR(product_num, 6) + " / " + STR(TOTAL, 6) + "  " + STR(pct, 3) + "%  " + bar
     ENDIF
 
 ENDDO
 
-? ""
-? "=== Generation complete ==="
-? "Total records: " + STR(RECCOUNT())
-? "End time: " + TIME()
+* Final progress bar (100%)
+@ prog_row, 0 SAY "  " + STR(TOTAL, 6) + " / " + STR(TOTAL, 6) + "  100%  [" + REPLICATE("#", 50) + "]"
+
+@ prog_row + 2, 0 SAY "=== Generation complete ==="
+@ prog_row + 3, 0 SAY "Total records: " + STR(RECCOUNT())
+@ prog_row + 4, 0 SAY "End time: " + TIME()
 
 * Create index on barcode for testing
+@ prog_row + 6, 0 SAY "Creating barcode index..."
 INDEX ON BARCODE TO products_barcode
-
-? "Index created: products_barcode.ndx"
+@ prog_row + 6, 0 SAY "Creating barcode index... done                    "
 
 * Create index on category for testing
+@ prog_row + 7, 0 SAY "Creating category index..."
 INDEX ON CATEGORY TO products_category
-
-? "Index created: products_category.ndx"
+@ prog_row + 7, 0 SAY "Creating category index... done                   "
 
 CLOSE DATABASES
 RETURN

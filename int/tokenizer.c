@@ -616,14 +616,14 @@ Token *tokenize(const char *source)
         if (at_line_start && c == '*') {
             /* Line comment: consume to end of line */
             consume_to_eol(&pos, &line);
-            at_line_start = 0;
+            at_line_start = 1;
             continue;
         }
 
         if (at_line_start && c == '&' && *(pos + 1) == '&') {
             /* && comment at line start: consume to end of line */
             consume_to_eol(&pos, &line);
-            at_line_start = 0;
+            at_line_start = 1;
             continue;
         }
 

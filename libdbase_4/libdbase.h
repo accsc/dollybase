@@ -24,8 +24,6 @@
 
 #define MAX_DBT_CONTENT 2048 /* 2Kb for len of DBT fields         */
 			     /* The block size is still 512 bytes  */
-			  
-extern int d_modules[3];
 
 typedef struct {
 int sig;
@@ -142,8 +140,6 @@ int pack(DATABASEDBF *asp);
 int pack_db_with_dbt_file(DATABASEDBF *asp, char *_na);
 
 /* Acciones con registros o campos */
-long long average_campo(DATABASEDBF *asp, char *campo, int nexts);
-long long sum_campo(DATABASEDBF *asp, char *campo, int nexts);
 int field_name(DATABASEDBF *asp, int campon, char **name);
 void skip(DATABASEDBF **asp);
 DATABASEDBF skip_index(DATABASEDBF asp);

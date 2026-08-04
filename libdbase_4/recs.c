@@ -355,11 +355,16 @@ fflush(stderr);
 #endif
 
 y = asp->fields.longitudes[x] - strlen(rerum);
+
+/* Truncate content and suppress padding if it exceeds field width */
+if (y < 0)
+y = 0;
+
 #ifdef DEBUG
 fprintf(stderr,"replace. Padding with %i blanks because %i-%i=%i\n",y,asp->fields.longitudes[x],strlen(rerum),y);
 fflush(stderr);
 #endif
-for(dos = 0; dos < strlen(rerum); ++dos)
+for(dos = 0; dos < asp->fields.longitudes[x] && dos < strlen(rerum); ++dos)
 fputc(rerum[dos],a);
 for(dos = 0; dos < y; ++dos)
 fputc(' ',a);
@@ -799,11 +804,16 @@ fflush(stderr);
 #endif
 
 y = asp->fields.longitudes[x] - strlen(rerum);
+
+/* Truncate content and suppress padding if it exceeds field width */
+if (y < 0)
+y = 0;
+
 #ifdef DEBUG
 fprintf(stderr,"replace. Padding with %i blanks because %i-%i=%i\n",y,asp->fields.longitudes[x],strlen(rerum),y);
 fflush(stderr);
 #endif
-for(dos = 0; dos < strlen(rerum); ++dos)
+for(dos = 0; dos < asp->fields.longitudes[x] && dos < strlen(rerum); ++dos)
 fputc(rerum[dos],a);
 for(dos = 0; dos < y; ++dos)
 fputc(' ',a);

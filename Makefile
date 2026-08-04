@@ -30,13 +30,11 @@ LIBDIR = libdbase_4
 INTDIR = int
 
 # Library sources (matching libdbase_4/Makefile)
-# Note: imports/common.c is flattened to .libs/common.o
-LIB_SRCS = str_funcs.c index.c low.c recs.c deletes.c seeks.c appends.c \
-           mate.c creates.c printer.c export.c memofields.c locker.c \
+LIB_SRCS = index.c low.c recs.c deletes.c seeks.c appends.c \
+           creates.c export.c memofields.c locker.c \
            labels.c relations.c
 
 LIB_SRCS_FULL = $(addprefix $(LIBDIR)/,$(LIB_SRCS))
-LIB_SRCS_FULL += $(LIBDIR)/imports/common.c
 
 LIB_OBJS = $(addprefix $(LIBDIR)/.libs/,$(LIB_SRCS:.c=.o))
 LIB_STATIC = $(LIBDIR)/.libs/libdbase_0.4_s.a
@@ -68,11 +66,6 @@ $(LIB_STATIC): $(LIB_OBJS)
 
 # Compile library sources — include path points to libdir for libdbase.h
 $(LIBDIR)/.libs/%.o: $(LIBDIR)/%.c
-	@mkdir -p $(LIBDIR)/.libs
-	$(CC) $(CFLAGS) -fPIC -I$(LIBDIR) -c $< -o $@
-
-# Special rule for imports/common.c (nested path, flattened to .libs/common.o)
-$(LIBDIR)/.libs/common.o: $(LIBDIR)/imports/common.c
 	@mkdir -p $(LIBDIR)/.libs
 	$(CC) $(CFLAGS) -fPIC -I$(LIBDIR) -c $< -o $@
 

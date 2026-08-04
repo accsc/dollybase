@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <dirent.h>
 
 #include "executor.h"
 #include "parser.h"
@@ -58,6 +59,118 @@ static int port_strcasecmp(const char *a, const char *b)
         a++; b++;
     }
     return (unsigned char)*a - (unsigned char)*b;
+}
+
+/* ------------------------------------------------------------------ */
+/* Case-insensitive file resolution                                    */
+/* ------------------------------------------------------------------ */
+/*
+ * resolve_file_path — find a file on disk ignoring case.
+ *
+ * Given a requested filename (e.g. "TAX.DBF" or "tours"), scans the
+ * current directory for case-insensitive matches.
+ *
+ *   - Exactly 1 match  → copies the actual disk path into out[]
+ *   - 0 matches        → copies a lowercase version into out[] (for error msg)
+ *   - Multiple matches → prints an ambiguity error, copies lowercase into out[]
+ *
+ * Returns 1 if a unique file was found, 0 otherwise.
+ * The 'out' buffer must be at least 'out_size' bytes.
+ */
+
+static int resolve_file_path(const char *requested, char *out, size_t out_size)
+{
+    DIR *dir = opendir(".");
+    if (!dir) {
+        /* Can't open dir — just lowercase and return */
+        strncpy(out, requested, out_size - 1);
+        out[out_size - 1] = '\0';
+        for (char *p = out; *p; p++) *p = (char)tolower((unsigned char)*p);
+        return 0;
+    }
+
+    /* Split requested into base name and extension */
+    char req_name[512];
+    char req_ext[512] = "";
+    strncpy(req_name, requested, sizeof(req_name) - 1);
+    req_name[sizeof(req_name) - 1] = '\0';
+
+    char *dot = strrchr(req_name, '.');
+    if (dot) {
+        *dot = '\0';
+        strcpy(req_ext, dot);  /* includes the dot */
+    }
+
+    /* Scan directory for matches */
+    struct dirent *entry;
+    char *matches[64];
+    int match_count = 0;
+
+    while ((entry = readdir(dir)) != NULL) {
+        /* Skip . and .. */
+        if (entry->d_name[0] == '.' && (entry->d_name[1] == '\0' ||
+            (entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
+            continue;
+
+        /* Split entry name into base + extension */
+        char entry_name[512];
+        char entry_ext[512] = "";
+        strncpy(entry_name, entry->d_name, sizeof(entry_name) - 1);
+        entry_name[sizeof(entry_name) - 1] = '\0';
+
+        char *edot = strrchr(entry_name, '.');
+        if (edot) {
+            *edot = '\0';
+            strcpy(entry_ext, edot);  /* includes the dot */
+        }
+
+        /* Compare name part (case-insensitive) */
+        if (port_strcasecmp(entry_name, req_name) != 0)
+            continue;
+
+        /* If extension was specified, check it too (case-insensitive) */
+        if (req_ext[0]) {
+            if (entry_ext[0] == '\0' || port_strcasecmp(entry_ext, req_ext) != 0)
+                continue;
+        }
+
+        if (match_count < 64) {
+            matches[match_count++] = entry->d_name;
+        }
+    }
+    closedir(dir);
+
+    if (match_count == 1) {
+        strncpy(out, matches[0], out_size - 1);
+        out[out_size - 1] = '\0';
+        return 1;
+    }
+
+    if (match_count > 1) {
+        fprintf(stderr, "prg: ambiguous file '%s' (found %d matches):\n", requested, match_count);
+        for (int i = 0; i < match_count && i < 64; i++) {
+            fprintf(stderr, "  %s\n", matches[i]);
+        }
+    }
+
+    /* No match or ambiguous — return lowercase version */
+    strncpy(out, requested, out_size - 1);
+    out[out_size - 1] = '\0';
+    for (char *p = out; *p; p++) *p = (char)tolower((unsigned char)*p);
+    return 0;
+}
+
+/*
+ * force_lowercase — copy path to out, forcing all chars to lowercase.
+ * Used for write paths (SAVE TO, SET ALTERNATE TO) so files are always
+ * created with lowercase names on disk.
+ */
+
+static void force_lowercase(const char *path, char *out, size_t out_size)
+{
+    strncpy(out, path, out_size - 1);
+    out[out_size - 1] = '\0';
+    for (char *p = out; *p; p++) *p = (char)tolower((unsigned char)*p);
 }
 
 /* ------------------------------------------------------------------ */
@@ -630,8 +743,11 @@ static ExecStatus exec_do_call(Token **cur)
     }
 
     /* 2. Try to load as external .prg file */
+    char req_path[512];
+    snprintf(req_path, sizeof(req_path), "%s.prg", target);
+
     char path[512];
-    snprintf(path, sizeof(path), "%s.prg", target);
+    resolve_file_path(req_path, path, sizeof(path));
 
     char *source = NULL;
     FILE *fp = fopen(path, "r");
@@ -722,13 +838,16 @@ static ExecStatus exec_do_call(Token **cur)
 
 ExecStatus execute_file(const char *path)
 {
-    char full_path[512];
+    char req_path[512];
     if (strchr(path, '.') == NULL) {
-        snprintf(full_path, sizeof(full_path), "%s.prg", path);
+        snprintf(req_path, sizeof(req_path), "%s.prg", path);
     } else {
-        strncpy(full_path, path, sizeof(full_path) - 1);
-        full_path[sizeof(full_path) - 1] = '\0';
+        strncpy(req_path, path, sizeof(req_path) - 1);
+        req_path[sizeof(req_path) - 1] = '\0';
     }
+
+    char full_path[512];
+    resolve_file_path(req_path, full_path, sizeof(full_path));
 
     FILE *fp = fopen(full_path, "r");
     if (!fp) {
@@ -1384,13 +1503,15 @@ static ExecStatus exec_set(Token **cur)
             }
             /* Load file and scan for procedures (no execution) */
             {
-                char full[512];
+                char req[512];
                 if (strchr(fname, '.') == NULL) {
-                    snprintf(full, sizeof(full), "%s.prg", fname);
+                    snprintf(req, sizeof(req), "%s.prg", fname);
                 } else {
-                    strncpy(full, fname, sizeof(full) - 1);
-                    full[sizeof(full) - 1] = '\0';
+                    strncpy(req, fname, sizeof(req) - 1);
+                    req[sizeof(req) - 1] = '\0';
                 }
+                char full[512];
+                resolve_file_path(req, full, sizeof(full));
                 FILE *fp = fopen(full, "r");
                 if (fp) {
                     fseek(fp, 0, SEEK_END);
@@ -1438,6 +1559,20 @@ static ExecStatus exec_set(Token **cur)
             strncpy(idxfile, (*cur)->value, sizeof(idxfile) - 1);
             idxfile[sizeof(idxfile) - 1] = '\0';
             *cur = (*cur)->next;
+            /* Resolve case-insensitively */
+            {
+                char req[1024];
+                if (strchr(idxfile, '.') == NULL) {
+                    snprintf(req, sizeof(req), "%s.ndx", idxfile);
+                } else {
+                    strncpy(req, idxfile, sizeof(req) - 1);
+                    req[sizeof(req) - 1] = '\0';
+                }
+                char resolved[1024];
+                resolve_file_path(req, resolved, sizeof(resolved));
+                strncpy(idxfile, resolved, sizeof(idxfile) - 1);
+                idxfile[sizeof(idxfile) - 1] = '\0';
+            }
             wa_set_index(idxfile);
         } else {
             /* SET INDEX TO with no file = clear */
@@ -1469,6 +1604,8 @@ static ExecStatus exec_set(Token **cur)
                 strncat(altfile, (*cur)->value, sizeof(altfile) - strlen(altfile) - 1);
                 *cur = (*cur)->next;
             }
+            /* Force lowercase for writes so files are always lowercase on disk */
+            force_lowercase(altfile, altfile, sizeof(altfile));
             g_alternate_file = fopen(altfile, "a");
         }
         skip_to_eol(cur);
@@ -1594,6 +1731,21 @@ static ExecStatus exec_use(Token **cur)
             alias_name[sizeof(alias_name) - 1] = '\0';
             *cur = (*cur)->next;
         }
+    }
+
+    /* Resolve filename case-insensitively (add .dbf if no extension) */
+    {
+        char req[1024];
+        if (strchr(filename, '.') == NULL) {
+            snprintf(req, sizeof(req), "%s.dbf", filename);
+        } else {
+            strncpy(req, filename, sizeof(req) - 1);
+            req[sizeof(req) - 1] = '\0';
+        }
+        char resolved[1024];
+        resolve_file_path(req, resolved, sizeof(resolved));
+        strncpy(filename, resolved, sizeof(filename) - 1);
+        filename[sizeof(filename) - 1] = '\0';
     }
 
     if (wa_use(filename, -1, alias_name[0] ? alias_name : NULL) != 0) {
@@ -2759,6 +2911,8 @@ static ExecStatus exec_display_memory(Token **cur)
                 strncat(fname, (*cur)->value, sizeof(fname) - strlen(fname) - 1);
                 *cur = (*cur)->next;
             }
+            /* Force lowercase for writes */
+            force_lowercase(fname, fname, sizeof(fname));
             out_file = fopen(fname, "w");
         }
     }
@@ -4148,6 +4302,9 @@ static ExecStatus exec_save(Token **cur)
         }
     }
 
+    /* Force lowercase for writes */
+    force_lowercase(filename, filename, sizeof(filename));
+
     /* Parse optional: ALL [LIKE <pattern>] [EXCEPT <pattern>] or variable list */
     int is_all = 0;
     char like_pattern[256] = "";
@@ -4273,6 +4430,14 @@ static ExecStatus exec_restore(Token **cur)
         if (len < 4 || strcasecmp(filename + len - 4, ".mem") != 0) {
             strncat(filename, ".mem", sizeof(filename) - strlen(filename) - 1);
         }
+    }
+
+    /* Resolve case-insensitively */
+    {
+        char resolved[512];
+        resolve_file_path(filename, resolved, sizeof(resolved));
+        strncpy(filename, resolved, sizeof(filename) - 1);
+        filename[sizeof(filename) - 1] = '\0';
     }
 
     /* Check for ADDITIVE */

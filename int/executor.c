@@ -219,6 +219,7 @@ static ExecStatus exec_replace(Token **cur);
 static ExecStatus exec_average(Token **cur);
 static ExecStatus exec_append(Token **cur);
 static ExecStatus exec_display(Token **cur);
+static ExecStatus exec_display_memory(Token **cur);
 static ExecStatus exec_list(Token **cur);
 static ExecStatus exec_browse(Token **cur);
 static ExecStatus exec_seek(Token **cur);
@@ -2736,12 +2737,86 @@ static ExecStatus exec_append(Token **cur)
 }
 
 /* ------------------------------------------------------------------ */
+/* DISPLAY MEMORY [TO <file>]                                          */
+/* ------------------------------------------------------------------ */
+
+static ExecStatus exec_display_memory(Token **cur)
+{
+    (*cur) = (*cur)->next; /* skip "MEMORY" */
+
+    /* Optional: TO <file> */
+    FILE *out_file = NULL;
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_TO) {
+        *cur = (*cur)->next; /* skip "TO" */
+        if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_STRING)) {
+            char fname[512];
+            strncpy(fname, (*cur)->value, sizeof(fname) - 1);
+            fname[sizeof(fname) - 1] = '\0';
+            *cur = (*cur)->next;
+            /* Handle dot-skipping: if next token is also ident/keyword, append */
+            if (*cur && ((*cur)->type == TOK_IDENT || (*cur)->type == TOK_KEYWORD)) {
+                strncat(fname, ".", sizeof(fname) - strlen(fname) - 1);
+                strncat(fname, (*cur)->value, sizeof(fname) - strlen(fname) - 1);
+                *cur = (*cur)->next;
+            }
+            out_file = fopen(fname, "w");
+        }
+    }
+
+    int total = vars_count();
+
+    for (int i = 0; i < total; i++) {
+        const char *name;
+        ExprValue val;
+        if (!vars_get_by_index(i, &name, &val))
+            continue;
+
+        char *s = val_to_string(&val);
+        const char *type_name = val_type_name(val.type);
+
+        char line[512];
+        snprintf(line, sizeof(line), "%-16s %-6s %s", name, type_name, s ? s : "");
+
+        if (out_file) {
+            fputs(line, out_file);
+            fputc('\n', out_file);
+        } else {
+            if (ui_is_active()) {
+                ui_print(line);
+                ui_print_newline();
+            } else {
+                printf("%s\n", line);
+            }
+        }
+
+        free(s);
+        free_value(&val);
+    }
+
+    if (out_file) {
+        fflush(out_file);
+        fclose(out_file);
+    } else if (ui_is_active()) {
+        ui_refresh();
+    }
+
+    skip_to_eol(cur);
+    return EXEC_OK;
+}
+
+/* ------------------------------------------------------------------ */
 /* DISPLAY STRUCTURE                                                   */
 /* ------------------------------------------------------------------ */
 
 static ExecStatus exec_display(Token **cur)
 {
     (*cur) = (*cur)->next; /* skip "DISPLAY" */
+
+    /* DISPLAY MEMORY [TO <file>] */
+    if (*cur && (*cur)->type == TOK_KEYWORD && (*cur)->keyword_id == KW_MEMORY) {
+        return exec_display_memory(cur);
+    }
+
     /* Expect "STRUCTURE" or "STATUS" — skip it */
     if (*cur && !is_eol_or_eof(*cur)) {
         *cur = (*cur)->next;

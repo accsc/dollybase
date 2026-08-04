@@ -118,6 +118,7 @@ typedef enum {
     KW_CLEAR,
     KW_CLEAR_ALL,
     KW_CLEAR_MEMORY,
+    KW_MEMORY,
     KW_DEFAULT,
     KW_DIMENSION,
     KW_FOCUS,

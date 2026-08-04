@@ -113,6 +113,7 @@ static const KeywordEntry KEYWORDS[] = {
     {"LTRIM",        KW_LTRIM},
     {"LUPDATE",      KW_LUPDATE},
     {"MAX",          KW_MAX},
+    {"MEMORY",       KW_MEMORY},
     {"MIN",          KW_MIN},
     {"MOD",          KW_MOD},
     {"MONTH",        KW_MONTH},

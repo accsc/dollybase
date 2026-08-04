@@ -3,11 +3,13 @@
  *
  * Format (32-byte header per variable, followed by payload):
  *   Offset 0x00-0x0A (11 bytes): Variable name, ASCII, NUL-padded
- *   Offset 0x0B (1 byte):        Type byte (0xC3 = character, 0xCE = numeric)
+ *   Offset 0x0B (1 byte):        Type byte (0xC3=C, 0xC4=D, 0xCC=L, 0xCE=N)
  *   Offset 0x0C-0x0F (4 bytes):  Record ID / serial number (little-endian)
- *   Offset 0x10-0x11 (2 bytes):  Character: payload length | Numeric: width + decimals
+ *   Offset 0x10-0x11 (2 bytes):  Char: payload len | Numeric: width+decimals
  *   Offset 0x12-0x1F (14 bytes): Reserved (usually zero)
- *   Offset 0x20+:                Payload (char: <len> bytes | numeric: 8-byte double LE)
+ *   Offset 0x20+:                Payload:
+ *                                 Char: <len> bytes | Numeric: 8-byte double LE
+ *                                 Date: 8-byte double LE (Julian Day) | Logical: 1 byte
  *
  * File ends with 0x1A (DOS EOF marker).
  */
